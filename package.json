@@ -1,0 +1,13 @@
+{
+  "name": "cineplus",
+  "version": "1.0.0",
+  "description": "CINEPLUS - plataforma de películas y series con fuentes autorizadas (sin dependencias externas, solo Node.js >= 22.13)",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node --watch --disable-warning=ExperimentalWarning server/index.js",
+    "test": "node --disable-warning=ExperimentalWarning test/smoke.js"
+  },
+  "engines": { "node": ">=22.13" },
+  "dependencies": {}
+}
