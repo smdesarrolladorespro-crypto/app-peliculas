@@ -677,4 +677,5 @@ async function boot() {
   splash.classList.add('out');
   setTimeout(() => splash.remove(), 600);
 }
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 boot();
