@@ -25,6 +25,7 @@ function build() {
       "form-action 'self'",
       "frame-ancestors 'none'",
     ].join('; '),
+    'X-App': 'cineplus',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',

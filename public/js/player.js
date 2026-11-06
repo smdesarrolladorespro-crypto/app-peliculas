@@ -112,6 +112,7 @@ export function createPlayer(opts) {
   const toggle = () => { if (video.paused) video.play().catch(() => {}); else video.pause(); };
   const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
   const toggleFs = () => {
+    if (root.closest('.watch.rot')) return; // ya ocupa toda la pantalla
     if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
     else { const f = root.requestFullscreen || root.webkitRequestFullscreen; if (f) f.call(root); }
   };
@@ -159,7 +160,12 @@ export function createPlayer(opts) {
   root.append(video, center, top, bottom);
 
   // ---- Barra de progreso (ratón y táctil) ------------------------------------
-  const ratioFrom = (e) => { const r = seek.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
+  // Con el reproductor girado 90° (modo horizontal forzado) el eje de la barra es el vertical de la pantalla.
+  const ratioFrom = (e) => {
+    const r = seek.getBoundingClientRect();
+    const v = root.closest('.watch.rot') ? (e.clientY - r.top) / r.height : (e.clientX - r.left) / r.width;
+    return Math.min(1, Math.max(0, v));
+  };
   let dragging = false;
   seek.addEventListener('pointerdown', (e) => { dragging = true; seek.setPointerCapture(e.pointerId); if (video.duration) video.currentTime = ratioFrom(e) * video.duration; });
   seek.addEventListener('pointermove', (e) => {

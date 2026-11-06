@@ -1,8 +1,13 @@
 'use strict';
-// Service worker mínimo: hace la app instalable (PWA / APK) y guarda solo la "cáscara" estática.
-// Nunca guarda /api ni /uploads ni video: siempre van a la red.
-const CACHE = 'cineplus-shell-v2';
-const SHELL = ['/', '/css/styles.css', '/js/app.js', '/img/icon-192.png', '/offline.html'];
+// Service worker: hace la app instalable (PWA / APK), abre la "cáscara" al instante desde el dispositivo
+// (así, si el servidor gratuito está dormido, se ve la animación de CINEPLUS y no la página de espera del
+// hosting) y recibe notificaciones push. Nunca guarda /api, /uploads ni video: siempre van a la red.
+const CACHE = 'cineplus-shell-v3';
+const SHELL = [
+  '/', '/css/styles.css',
+  '/js/app.js', '/js/api.js', '/js/ui.js', '/js/player.js', '/js/landscape.js', '/js/push.js', '/js/admin.js',
+  '/img/icon.svg', '/img/icon-192.png', '/img/icon-512.png', '/manifest.webmanifest', '/offline.html',
+];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -10,19 +15,27 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
+
+// Lo guardado se sirve al instante y se actualiza en segundo plano (la nueva versión se ve en la siguiente apertura).
+// Solo se guardan respuestas que llevan la marca X-App de CINEPLUS: así nunca se guarda la página de espera del hosting.
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/uploads/')) return;
+  if (/^\/(api|uploads|\.well-known)\//.test(url.pathname) || url.pathname === '/sw.js') return;
   if (req.headers.has('range')) return;
-  // Red primero; si falla, lo guardado; si es una página, la pantalla sin conexión.
-  e.respondWith(
-    fetch(req).then((res) => {
-      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+  const nav = req.mode === 'navigate';
+  const key = nav ? '/' : req;
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(key);
+    const refresh = fetch(req).then(async (res) => {
+      if (res.ok && res.headers.get('x-app') === 'cineplus') await cache.put(key, res.clone());
       return res;
-    }).catch(() => caches.match(req).then((r) => r || (req.mode === 'navigate' ? caches.match('/offline.html') : Response.error()))),
-  );
+    });
+    if (cached) { e.waitUntil(refresh.catch(() => {})); return cached; }
+    try { return await refresh; } catch { return (nav && (await cache.match('/offline.html'))) || Response.error(); }
+  })());
 });
 
 // Notificaciones push

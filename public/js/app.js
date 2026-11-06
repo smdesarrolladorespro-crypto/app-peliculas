@@ -2,6 +2,7 @@ import { h, icon, logo, toast, modal, confirmBox, clear, fmtTime, fmtRuntime, fm
 import { S, api, get, post, put, patch, del, loadFavs, toggleFav, setSession, selectProfile, clearSession } from './api.js';
 import { createPlayer } from './player.js';
 import { pushState, enablePush, disablePush, detachPush } from './push.js';
+import { enforceLandscape } from './landscape.js';
 
 const root = document.getElementById('app');
 const COLORS = ['#e50914', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
@@ -561,8 +562,11 @@ route('/watch/:id', async ({ box, params, query, alive, setCleanup }) => {
       nextTimer = setInterval(() => { n--; label.textContent = `Siguiente en ${n} s`; if (n <= 0) { clearInterval(nextTimer); go(`/watch/${id}?ep=${info.next.id}`); } }, 1000);
     },
   });
-  setCleanup(() => { clearInterval(nextTimer); player.destroy(); });
-  box.append(h('div', { class: 'watch' }, player.el));
+  const watchEl = h('div', { class: 'watch' }, player.el);
+  let stopLandscape = () => {};
+  setCleanup(() => { clearInterval(nextTimer); stopLandscape(); player.destroy(); });
+  box.append(watchEl);
+  stopLandscape = enforceLandscape(watchEl); // el video siempre en horizontal
 }, { layout: 'bare' });
 
 /* ---------------------------------------------------------------- Favoritos */
@@ -681,12 +685,39 @@ route('/admin', async (ctx) => {
 }, { layout: 'shell', admin: true });
 
 /* --------------------------------------------------------------------- Inicio */
+// Pide la sesión al servidor. Si el servidor está despertando (hosting gratuito) reintenta en silencio
+// mostrando una animación de carga, en lugar de dejar la pantalla en blanco o con un error.
+async function fetchMe(onWaiting) {
+  const t0 = Date.now();
+  for (;;) {
+    try { return await get('/api/auth/me'); } catch (e) {
+      if (e.status >= 400 && e.status < 500) return null; // sin sesión
+      if (Date.now() - t0 > 150_000) throw e;
+      onWaiting();
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+  }
+}
+
 async function boot() {
   const splash = h('div', { class: 'splash', 'aria-label': 'Cargando CINEPLUS', role: 'img' }, h('div', { class: 'splash-play' }, icon('play', true)));
   document.body.append(splash);
   const minWait = new Promise((r) => setTimeout(r, 1500));
+  // Si el servidor tarda en responder, se muestra "Conectando…" bajo la flecha.
+  let waitBox = null;
+  const showWait = () => {
+    if (waitBox) return;
+    waitBox = h('div', { class: 'splash-wait', role: 'status' }, h('div', { class: 'ring' }), h('p', null, 'Conectando con el servidor…'), h('small', null, 'Si estaba dormido puede tardar hasta un minuto.'));
+    splash.append(waitBox);
+  };
+  const slow = setTimeout(showWait, 3000);
   let me = null;
-  try { me = await get('/api/auth/me'); } catch { /* sin sesión */ }
+  try { me = await fetchMe(showWait); } catch {
+    clearTimeout(slow); showWait();
+    waitBox.replaceChildren(h('p', null, 'No se pudo conectar con el servidor.'), h('button', { class: 'btn primary', onclick: () => location.reload() }, 'Reintentar'));
+    return;
+  }
+  clearTimeout(slow);
   if (me) { setSession(me); try { await enterApp(); } catch { /* se gestionará al navegar */ } }
   await minWait;
   const { path } = parseHash();
