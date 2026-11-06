@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.sm.desarrolladores.pro.cineplus",
+        "sha256_cert_fingerprints": ["42:1E:BC:44:D2:78:41:73:F9:CE:43:7E:1E:DC:6A:CC:01:7D:BF:AD:6D:51:3F:63:B4:88:FD:25:09:77:F7:4C"]
+      }
+    }]
