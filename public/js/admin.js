@@ -17,6 +17,26 @@ async function withHostRetry(fn) {
   }
 }
 
+// Modal para enviar una notificación a todos los usuarios suscritos.
+function notifyModal({ title = '', body = '', titleId = null } = {}) {
+  modal((box, close) => {
+    const t = h('input', { maxlength: '60', value: title, required: true });
+    const b = h('textarea', { maxlength: '160' }, body);
+    const err = h('div', { class: 'error', hidden: true, role: 'alert' });
+    const send = h('button', { class: 'btn primary', type: 'submit' }, icon('bell'), 'Enviar a todos');
+    box.append(h('h2', null, 'Enviar notificación'),
+      h('form', { onsubmit: async (ev) => {
+        ev.preventDefault(); err.hidden = true; send.disabled = true;
+        try {
+          const r = await post('/api/admin/push/send', { title: t.value, body: b.value, titleId });
+          toast(r.total ? `Enviada a ${r.sent} de ${r.total} dispositivos` : 'Nadie tiene las notificaciones activadas todavía', r.total ? 'ok' : '');
+          close();
+        } catch (x) { err.textContent = x.message; err.hidden = false; } finally { send.disabled = false; }
+      } }, err, fld('Título', t, 'Máximo 60 caracteres'), fld('Mensaje', b, 'Máximo 160 caracteres'),
+      h('div', { class: 'foot' }, h('button', { type: 'button', class: 'btn', onclick: close }, 'Cancelar'), send)));
+  });
+}
+
 function readFileB64(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -279,6 +299,11 @@ async function openEditor(id, stats, genres, onDone, presetType) {
         try {
           const r = await withHostRetry(() => (id ? put('/api/admin/titles/' + id, body) : post('/api/admin/titles', body)));
           toast('Título guardado', 'ok'); close(); onDone();
+          if (!id) {
+            const label = r.title.type === 'series' ? 'Nueva serie' : 'Nueva película';
+            confirmBox(`¿Avisar a los usuarios por notificación de “${r.title.title}”?`, { okText: 'Enviar aviso' })
+              .then((yes) => { if (yes) notifyModal({ title: `${label} en CINEPLUS`, body: r.title.title, titleId: r.title.id }); });
+          }
           if (!id && r.title.type === 'series') openEditor(r.title.id, stats, genres, onDone).catch((e) => toast(e.message, 'err'));
         } catch (x) { err.textContent = x.message; err.hidden = false; } finally { save.disabled = false; }
       } }, err,
@@ -322,6 +347,7 @@ async function contentTab(pane, stats, genres) {
         h('td', null, star),
         h('td', null, h('div', { class: 'actions-cell' },
           h('button', { class: 'btn small', onclick: () => openEditor(t.id, stats, genres, load).catch((e) => toast(e.message, 'err')) }, icon('edit'), 'Editar'),
+          h('button', { class: 'icon-btn', 'aria-label': 'Avisar a los usuarios de ' + t.title, title: 'Avisar a los usuarios', onclick: () => notifyModal({ title: (t.type === 'series' ? 'Serie' : 'Película') + ' en CINEPLUS', body: t.title, titleId: t.id }) }, icon('bell')),
           h('button', { class: 'btn small danger', 'aria-label': 'Eliminar ' + t.title, onclick: async () => {
             if (!(await confirmBox(`¿Eliminar “${t.title}”${t.type === 'series' ? ' y todos sus episodios' : ''}? También se quitará de favoritos e historiales.`, { okText: 'Eliminar', danger: true }))) return;
             try { await del('/api/admin/titles/' + t.id); toast('Título eliminado', 'ok'); load(); } catch (e) { toast(e.message, 'err'); }
@@ -408,7 +434,35 @@ async function sourcesTab(pane) {
   draw((await get('/api/admin/hosts')).hosts);
 }
 
+async function systemPanel() {
+  const box = h('div', { class: 'panel' }, h('h3', null, 'Sistema'), spinner());
+  try {
+    const sys = await get('/api/admin/system');
+    const when = (ms) => (ms ? new Date(ms).toLocaleString('es') : 'todavía no');
+    const line = (ok, text) => h('p', { style: 'margin:0 0 6px' }, (ok ? '✔ ' : '⚠ ') + text);
+    const bBtn = h('button', { class: 'btn small', onclick: async () => {
+      bBtn.disabled = true;
+      try { const r = await post('/api/admin/backup/run'); toast('Copia guardada', 'ok'); bTxt.textContent = '✔ Última copia: ' + when(r.lastAt); } catch (e) { toast(e.message, 'err'); } finally { bBtn.disabled = false; }
+    } }, 'Hacer copia ahora');
+    const bTxt = h('span', null, sys.backup.enabled
+      ? (sys.backup.lastError ? '⚠ Error en la última copia: ' + sys.backup.lastError : '✔ Última copia: ' + when(sys.backup.lastAt))
+      : '⚠ Sin copias de seguridad: si el servidor se reinicia en un plan gratuito, se pierden los datos (ver DEPLOY.md).');
+    const mBtn = h('button', { class: 'btn small', onclick: async () => {
+      mBtn.disabled = true;
+      try { const r = await post('/api/admin/mail/test'); toast('Correo de prueba enviado a ' + r.to, 'ok'); } catch (e) { toast(e.message, 'err'); } finally { mBtn.disabled = false; }
+    } }, 'Enviar correo de prueba');
+    clear(box);
+    box.append(h('h3', null, 'Sistema'),
+      h('div', { class: 'row-flex', style: 'align-items:center;margin-bottom:10px' }, h('div', { class: 'grow' }, h('b', null, 'Copias de seguridad'), h('div', null, bTxt)), sys.backup.enabled ? bBtn : null),
+      h('div', { class: 'row-flex', style: 'align-items:center;margin-bottom:10px' }, h('div', { class: 'grow' }, h('b', null, 'Correo'), h('div', null, sys.mail.provider ? `✔ ${sys.mail.provider} · remitente ${sys.mail.from}` : '⚠ Sin proveedor: los correos de recuperación de contraseña no se envían (ver DEPLOY.md).')), sys.mail.provider ? mBtn : null),
+      h('div', { class: 'row-flex', style: 'align-items:center' }, h('div', { class: 'grow' }, h('b', null, 'Notificaciones'), h('div', null, `${sys.push.subscriptions} dispositivo(s) de ${sys.push.users} usuario(s) las tienen activadas`)),
+        h('button', { class: 'btn small', onclick: () => notifyModal() }, icon('bell'), 'Enviar aviso')));
+  } catch (e) { clear(box); box.append(h('h3', null, 'Sistema'), h('p', { class: 'muted' }, e.message)); }
+  return box;
+}
+
 function overviewTab(pane, stats) {
+  systemPanel().then((el) => pane.append(el));
   pane.append(h('div', { class: 'stats' }, [['Usuarios', stats.users], ['Películas', stats.movies], ['Series', stats.series], ['Episodios', stats.episodes], ['Destacados', stats.featured], ['Reproducciones', stats.plays]].map(([l, v]) => h('div', { class: 'stat' }, h('b', null, v), h('span', null, l)))),
     h('div', { class: 'panel' }, h('h3', null, 'Fuentes de video autorizadas'),
       h('p', { class: 'muted', style: 'margin-bottom:10px' }, 'El servidor rechaza cualquier fuente que no sea HTTPS de uno de estos dominios (o un archivo subido). Gestiona la lista en la pestaña Fuentes.'),

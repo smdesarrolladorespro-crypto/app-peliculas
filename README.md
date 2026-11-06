@@ -112,9 +112,9 @@ sinopsis, año, calificación, géneros, póster y fondo) y, para series con TMD
 ### Antes de publicarla en Internet
 - `NODE_ENV=production` y un `JWT_SECRET` propio (la app no arranca sin él).
 - Ponla detrás de HTTPS (nginx/Caddy) y activa `TRUST_PROXY=1`.
-- **Correo**: `server/mailer.js` solo imprime el mensaje en consola. Implementa ahí el envío real (SMTP o API)
-  para que el enlace de recuperación llegue al usuario; en producción el enlace nunca se muestra en pantalla.
-- Haz copias de seguridad de `data/` (base SQLite y archivos subidos).
+- **Correo**: `server/mailer.js` envía por la API de Brevo o Resend (`BREVO_API_KEY`/`RESEND_API_KEY` + `MAIL_FROM`); sin proveedor solo imprime en consola. En producción el enlace de recuperación nunca se muestra en pantalla.
+- **Datos**: con disco persistente (`DATA_DIR`) o con copias automáticas a S3 (`BACKUP_S3_*`, `server/backup.js`) que se restauran solas al arrancar.
+- **Notificaciones push** (`server/push.js`): Web Push con VAPID y cifrado RFC 8291, sin dependencias.
 - Los límites de tasa son en memoria (un proceso). Con varias instancias muévelos a un almacén compartido.
 - SQLite es suficiente para una instancia; el acceso a datos está centralizado en `server/db.js` y las rutas
   para migrar a PostgreSQL si el catálogo o el tráfico crecen.

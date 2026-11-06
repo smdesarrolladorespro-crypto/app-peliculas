@@ -4,7 +4,7 @@
 // de dominio público del Internet Archive. Los pósteres se generan localmente (SVG) para no
 // depender de terceros ni usar material protegido.
 const crypto = require('crypto');
-const { q, tx } = require('./db');
+const { q, tx, getSetting, setSetting } = require('./db');
 const { hashPassword } = require('./lib/security');
 const { ADMIN_EMAIL, ADMIN_PASSWORD, IS_PROD } = require('./config');
 
@@ -110,8 +110,11 @@ async function seed() {
     console.log('============================\n');
   }
 
-  // Catálogo inicial (solo si está vacío, para no pisar lo que gestione el administrador)
-  if (q.get('SELECT COUNT(*) n FROM titles').n === 0 && !(IS_PROD && process.env.SEED_CATALOG === '0')) {
+  // Catálogo inicial: se carga UNA sola vez (con la base vacía). Después queda marcado, para que
+  // lo que el administrador borre o edite no reaparezca al reiniciar el servidor.
+  const firstTime = getSetting('catalog_seeded') === null;
+  if (firstTime) setSetting('catalog_seeded', String(now));
+  if (firstTime && q.get('SELECT COUNT(*) n FROM titles').n === 0 && process.env.SEED_CATALOG !== '0') {
     tx(() => {
       CATALOG.forEach((c, i) => {
         const hue = (i * 47 + 350) % 360;

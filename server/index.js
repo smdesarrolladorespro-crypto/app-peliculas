@@ -3,10 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { PORT, PUBLIC_DIR, UPLOAD_DIR, IS_PROD, TRUST_PROXY } = require('./config');
 const { createApp, HttpError } = require('./lib/http');
-const { seed } = require('./seed');
-const { allowedHosts } = require('./sources');
 
 function build() {
+  const { allowedHosts } = require('./sources');
   const app = createApp({ trustProxy: TRUST_PROXY });
 
   // Cabeceras de seguridad. Los reproductores embebidos y los videos directos requieren permitir
@@ -48,6 +47,7 @@ function build() {
   require('./routes/catalog')(app);
   require('./routes/me')(app);
   require('./routes/admin')(app);
+  require('./routes/push')(app);
 
   app.static('/uploads', UPLOAD_DIR);
   app.static('/', PUBLIC_DIR, { spa: true });
@@ -55,9 +55,31 @@ function build() {
 }
 
 async function start() {
+  // 1) Restaurar la copia de seguridad (si está configurada) ANTES de abrir la base de datos.
+  const backup = require('./backup');
+  await backup.restore();
+  const { seed } = require('./seed');
+  const { db } = require('./db');
   await seed();
   const app = build();
-  app.listen(PORT, () => console.log(`CINEPLUS en http://localhost:${PORT}`));
+  const server = app.listen(PORT, () => console.log(`CINEPLUS en http://localhost:${PORT}`));
+  if (backup.enabled()) {
+    console.log('[copias] Copias de seguridad activas.');
+    backup.startSchedule(db);
+  } else if (IS_PROD) {
+    console.warn('[copias] AVISO: sin copias de seguridad ni disco persistente, los datos se perderán al reiniciar.');
+  }
+  // 2) Al apagarse (Render envía SIGTERM al reiniciar o dormir el servicio): última copia y salida limpia.
+  let closing = false;
+  const shutdown = async () => {
+    if (closing) return;
+    closing = true;
+    server.close();
+    await backup.finalBackup(db);
+    process.exit(0);
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 if (require.main === module) start().catch((e) => { console.error(e); process.exit(1); });

@@ -80,7 +80,8 @@ module.exports = (app) => {
       q.run('DELETE FROM password_resets WHERE user_id = ?', user.id);
       q.run('INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?,?,?)', user.id, sha256(token), Date.now() + 30 * 60_000);
       const link = `${APP_URL}/#/reset/${token}`;
-      await sendMail({ to: user.email, subject: 'Restablece tu contraseña de CINEPLUS', text: `Hola ${user.name},\n\nUsa este enlace (válido 30 minutos) para crear una nueva contraseña:\n${link}\n\nSi no lo solicitaste, ignora este mensaje.` });
+      // Sin await: el tiempo de respuesta no debe revelar si el correo existe (sendMail nunca lanza).
+      sendMail({ to: user.email, subject: 'Restablece tu contraseña de CINEPLUS', text: `Hola ${user.name},\n\nRecibimos una solicitud para crear una nueva contraseña. El enlace es válido por 30 minutos y solo se puede usar una vez:\n${link}\n\nSi no lo solicitaste, ignora este mensaje: tu contraseña no cambiará.`, button: { label: 'Crear nueva contraseña', url: link } });
       // Solo en desarrollo (sin servicio de correo) se devuelve el enlace para poder probar el flujo.
       if (SHOW_RESET_LINK) out.devLink = `/#/reset/${token}`;
     }

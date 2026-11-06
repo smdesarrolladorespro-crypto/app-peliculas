@@ -1,6 +1,7 @@
 import { h, icon, logo, toast, modal, confirmBox, clear, fmtTime, fmtRuntime, fmtDate, spinner, initial } from './ui.js';
 import { S, api, get, post, put, patch, del, loadFavs, toggleFav, setSession, selectProfile, clearSession } from './api.js';
 import { createPlayer } from './player.js';
+import { pushState, enablePush, disablePush, detachPush } from './push.js';
 
 const root = document.getElementById('app');
 const COLORS = ['#e50914', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
@@ -188,6 +189,7 @@ function ensureShell(path) {
 }
 
 async function doLogout() {
+  await detachPush();
   try { await post('/api/auth/logout'); } catch { /* ignorar */ }
   clearSession();
   shell = null;
@@ -646,9 +648,25 @@ route('/profile', ({ box }) => {
     if (S.profiles.length < 5) plist.append(h('div', { style: 'padding-top:14px' }, h('button', { class: 'btn', onclick: () => profileForm({ onSaved: drawP }) }, icon('plus'), 'Añadir perfil')));
   };
   drawP();
+  // Notificaciones
+  const nbox = h('div');
+  const drawN = async () => {
+    clear(nbox);
+    const st = await pushState();
+    if (st === 'unsupported') return nbox.append(h('p', { class: 'muted' }, 'Este dispositivo o navegador no admite notificaciones.'));
+    if (st === 'denied') return nbox.append(h('p', { class: 'muted' }, 'Las notificaciones están bloqueadas. Actívalas en los ajustes del teléfono: Aplicaciones > CINEPLUS > Notificaciones (o en los permisos del sitio en tu navegador).'));
+    const btn = h('button', { class: 'btn' + (st === 'on' ? '' : ' primary'), onclick: async () => {
+      btn.disabled = true;
+      try { if (st === 'on') { await disablePush(); toast('Notificaciones desactivadas en este dispositivo', 'ok'); } else { await enablePush(); toast('Notificaciones activadas', 'ok'); } } catch (e) { toast(e.message, 'err'); }
+      drawN();
+    } }, icon('bell'), st === 'on' ? 'Desactivar en este dispositivo' : 'Activar notificaciones');
+    nbox.append(h('p', { class: 'muted', style: 'margin-bottom:12px' }, st === 'on' ? '✔ Este dispositivo recibe avisos de estrenos y novedades.' : 'Recibe un aviso cuando se agreguen películas o series nuevas.'), btn);
+  };
+  drawN();
   wrap.append(
     h('div', { class: 'two-col' }, h('div', { class: 'panel' }, h('h3', null, 'Cuenta'), acc), h('div', { class: 'panel' }, h('h3', null, 'Seguridad'), pw)),
     h('div', { class: 'panel' }, h('h3', null, 'Perfiles'), plist),
+    h('div', { class: 'panel' }, h('h3', null, 'Notificaciones'), nbox),
     h('div', { class: 'row-flex' },
       h('a', { class: 'btn', href: '#/profiles' }, icon('swap'), 'Cambiar de perfil'),
       S.user.role === 'admin' ? h('a', { class: 'btn', href: '#/admin' }, icon('shield'), 'Panel de administración') : null,

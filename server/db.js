@@ -100,6 +100,19 @@ CREATE TABLE IF NOT EXISTS history (
   UNIQUE (profile_id, title_id, episode_id)
 );
 CREATE INDEX IF NOT EXISTS idx_history_profile ON history(profile_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
 `);
 
 const q = {
@@ -107,6 +120,9 @@ const q = {
   get: (sql, ...p) => db.prepare(sql).get(...p),
   run: (sql, ...p) => db.prepare(sql).run(...p),
 };
+
+const getSetting = (key) => (q.get('SELECT value FROM settings WHERE key = ?', key) || {}).value ?? null;
+const setSetting = (key, value) => q.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, String(value));
 
 function tx(fn) {
   db.exec('BEGIN');
@@ -120,4 +136,4 @@ function tx(fn) {
   }
 }
 
-module.exports = { db, q, tx };
+module.exports = { db, q, tx, getSetting, setSetting };

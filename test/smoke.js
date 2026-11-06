@@ -6,6 +6,8 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const http = require('http');
+const crypto = require('crypto');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cineplus-'));
 process.env.DATA_DIR = tmp;
@@ -304,4 +306,176 @@ test('dominios autorizados gestionados desde el panel', async () => {
   // 7) solo administradores
   assert.equal((await user.call('GET', '/api/admin/hosts')).status, 403);
   assert.equal((await user.call('POST', '/api/admin/hosts', { host: 'pirata.example.com' })).status, 403);
+});
+
+/* ------------------------------------------------ Producción: correo, push y copias */
+const listen = (srv) => new Promise((r) => srv.listen(0, '127.0.0.1', () => r(srv.address().port)));
+const collect = (req) => new Promise((r) => { const ch = []; req.on('data', (c) => ch.push(c)); req.on('end', () => r(Buffer.concat(ch))); });
+
+test('correo: la recuperación de contraseña se envía por la API del proveedor', async () => {
+  process.env.BREVO_API_KEY = 'clave-de-prueba';
+  process.env.MAIL_FROM = 'CINEPLUS <cine@example.com>';
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).startsWith('https://api.brevo.com')) { calls.push({ url: String(url), opts }); return new Response('{}', { status: 201 }); }
+    return realFetch(url, opts);
+  };
+  try {
+    const c = client();
+    assert.equal((await c.call('POST', '/api/auth/register', { name: 'Mail', email: 'mail@example.com', password: 'Clave12345' })).status, 201);
+    assert.equal((await c.call('POST', '/api/auth/forgot', { email: 'noexiste2@example.com' })).status, 200);
+    assert.equal((await c.call('POST', '/api/auth/forgot', { email: 'mail@example.com' })).status, 200);
+    for (let i = 0; i < 20 && !calls.length; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(calls.length, 1, 'solo se envía correo si la cuenta existe');
+    assert.equal(calls[0].opts.headers['api-key'], 'clave-de-prueba');
+    const body = JSON.parse(calls[0].opts.body);
+    assert.equal(body.sender.email, 'cine@example.com');
+    assert.equal(body.to[0].email, 'mail@example.com');
+    assert.match(body.htmlContent, /#\/reset\//);
+    assert.match(body.textContent, /#\/reset\//);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.BREVO_API_KEY; delete process.env.MAIL_FROM;
+  }
+});
+
+test('push: suscripción validada y mensaje cifrado que el dispositivo puede descifrar', async () => {
+  const got = [];
+  let status = 201;
+  const pushSrv = http.createServer(async (req, res) => { got.push({ headers: req.headers, body: await collect(req) }); res.statusCode = status; res.end(); });
+  const port = await listen(pushSrv);
+  const endpoint = `http://127.0.0.1:${port}/push/dispositivo-1`;
+  const ua = crypto.createECDH('prime256v1');
+  const uaPub = ua.generateKeys();
+  const authSecret = crypto.randomBytes(16);
+  const keys = { p256dh: uaPub.toString('base64url'), auth: authSecret.toString('base64url') };
+
+  const u = client();
+  assert.equal((await u.call('POST', '/api/auth/register', { name: 'Push', email: 'push@example.com', password: 'Clave12345' })).status, 201);
+  const key = (await u.call('GET', '/api/push/key')).data.key;
+  assert.equal(Buffer.from(key, 'base64url').length, 65);
+  for (const bad of ['https://169.254.169.254/latest', 'http://10.0.0.5/x', 'https://evil.example.com/push', 'nada']) {
+    assert.equal((await u.call('POST', '/api/push/subscribe', { endpoint: bad, keys })).status, 400, bad);
+  }
+  assert.equal((await u.call('POST', '/api/push/subscribe', { endpoint, keys: { p256dh: 'AAAA', auth: keys.auth } })).status, 400);
+  assert.equal((await u.call('POST', '/api/push/subscribe', { endpoint, keys })).status, 200);
+  assert.equal((await u.call('POST', '/api/admin/push/send', { title: 'Hola' })).status, 403, 'solo el administrador envía avisos');
+
+  const { q } = require('../server/db');
+  const titleId = q.get('SELECT id FROM titles LIMIT 1').id;
+  const a = client();
+  await a.call('POST', '/api/auth/login', { email: 'admin@cineplus.local', password: 'Admin12345' });
+  assert.equal((await a.call('POST', '/api/admin/push/send', { title: '', body: 'x' })).status, 400);
+  const r = await a.call('POST', '/api/admin/push/send', { title: 'Nueva película', body: 'Ya disponible', titleId });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.sent, 1);
+  assert.equal(got.length, 1);
+
+  // Descifrado en el lado del dispositivo (RFC 8291)
+  const { headers, body } = got[0];
+  assert.equal(headers['content-encoding'], 'aes128gcm');
+  const salt = body.subarray(0, 16);
+  const idlen = body[20];
+  const asPub = body.subarray(21, 21 + idlen);
+  const data = body.subarray(21 + idlen);
+  const secret = ua.computeSecret(asPub);
+  const ikm = Buffer.from(crypto.hkdfSync('sha256', secret, authSecret, Buffer.concat([Buffer.from('WebPush: info\0'), uaPub, asPub]), 32));
+  const cek = Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16));
+  const nonce = Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
+  const d = crypto.createDecipheriv('aes-128-gcm', cek, nonce);
+  d.setAuthTag(data.subarray(data.length - 16));
+  const plain = Buffer.concat([d.update(data.subarray(0, data.length - 16)), d.final()]);
+  assert.equal(plain[plain.length - 1], 2, 'delimitador de relleno');
+  const msg = JSON.parse(plain.subarray(0, plain.length - 1).toString());
+  assert.equal(msg.title, 'Nueva película');
+  assert.equal(msg.url, `/#/title/${titleId}`);
+
+  // Firma VAPID verificable con la clave pública publicada
+  const m = headers.authorization.match(/^vapid t=([\w-]+)\.([\w-]+)\.([\w-]+), k=([\w-]+)$/);
+  assert.ok(m, 'cabecera VAPID');
+  assert.equal(m[4], key);
+  const pub = Buffer.from(key, 'base64url');
+  const pubKey = crypto.createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: pub.subarray(1, 33).toString('base64url'), y: pub.subarray(33).toString('base64url') }, format: 'jwk' });
+  assert.ok(crypto.verify('sha256', Buffer.from(`${m[1]}.${m[2]}`), { key: pubKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(m[3], 'base64url')), 'firma ES256 válida');
+  assert.equal(JSON.parse(Buffer.from(m[2], 'base64url')).aud, `http://127.0.0.1:${port}`);
+
+  // Un dispositivo dado de baja (410) se elimina solo
+  status = 410;
+  const r2 = await a.call('POST', '/api/admin/push/send', { title: 'Otra', body: '' });
+  assert.equal(r2.data.removed, 1);
+  assert.equal(q.get('SELECT COUNT(*) n FROM push_subscriptions').n, 0);
+  pushSrv.close();
+});
+
+test('copias de seguridad: se suben, se restauran en un servidor nuevo y un fallo no deja arrancar vacío', async () => {
+  const store = new Map();
+  let failGets = false;
+  let signed = 0;
+  const s3 = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    const key = decodeURIComponent(url.pathname.split('/').slice(2).join('/'));
+    if (/^AWS4-HMAC-SHA256 Credential=KEY\//.test(req.headers.authorization || '')) signed++;
+    if (req.method === 'PUT') { store.set(key, await collect(req)); return res.end(); }
+    if (failGets) { res.statusCode = 500; return res.end('boom'); }
+    if (!key) {
+      const prefix = url.searchParams.get('prefix') || '';
+      return res.end(`<ListBucketResult><IsTruncated>false</IsTruncated>${[...store.keys()].filter((k) => k.startsWith(prefix)).map((k) => `<Contents><Key>${k}</Key></Contents>`).join('')}</ListBucketResult>`);
+    }
+    if (!store.has(key)) { res.statusCode = 404; return res.end('<Error/>'); }
+    res.end(store.get(key));
+  });
+  const port = await listen(s3);
+  Object.assign(process.env, { BACKUP_S3_ENDPOINT: `http://127.0.0.1:${port}`, BACKUP_S3_BUCKET: 'b', BACKUP_S3_KEY_ID: 'KEY', BACKUP_S3_SECRET: 'SECRET' });
+  try {
+    const backup = require('../server/backup');
+    const { UPLOAD_DIR } = require('../server/config');
+    fs.writeFileSync(path.join(UPLOAD_DIR, 'portada.png'), Buffer.from('imagen-falsa'));
+    await backup.backupNow();
+    assert.ok(store.has('cineplus.db') && store.has('uploads/portada.png'));
+    assert.ok([...store.keys()].some((k) => k.startsWith('daily/')));
+    assert.ok(signed >= 3, 'las peticiones van firmadas');
+    assert.equal(backup.status().lastError, null);
+
+    // Servidor nuevo (sin datos): restaura usuarios y archivos subidos
+    const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'cineplus-restore-'));
+    const out = await backup.restore({ dbPath: path.join(fresh, 'x.db'), uploadDir: path.join(fresh, 'up') });
+    assert.equal(out.restored, true);
+    const { DatabaseSync } = require('node:sqlite');
+    const copy = new DatabaseSync(path.join(fresh, 'x.db'));
+    assert.ok(copy.prepare("SELECT COUNT(*) n FROM users WHERE email = 'admin@cineplus.local'").get().n === 1);
+    assert.ok(copy.prepare('SELECT COUNT(*) n FROM titles').get().n > 0);
+    copy.close();
+    assert.equal(fs.readFileSync(path.join(fresh, 'up', 'portada.png'), 'utf8'), 'imagen-falsa');
+
+    // Si ya hay base de datos local, no se pisa
+    const again = await backup.restore({ dbPath: path.join(fresh, 'x.db'), uploadDir: path.join(fresh, 'up') });
+    assert.equal(again.restored, false);
+
+    // Si el almacenamiento falla, NO se arranca vacío (para no sobrescribir la copia buena)
+    failGets = true;
+    await assert.rejects(backup.restore({ dbPath: path.join(fresh, 'otra.db'), uploadDir: path.join(fresh, 'up2') }), /S3 GET/);
+    assert.equal(fs.existsSync(path.join(fresh, 'otra.db')), false);
+    fs.rmSync(fresh, { recursive: true, force: true });
+  } finally {
+    for (const k of ['BACKUP_S3_ENDPOINT', 'BACKUP_S3_BUCKET', 'BACKUP_S3_KEY_ID', 'BACKUP_S3_SECRET']) delete process.env[k];
+    s3.close();
+  }
+});
+
+test('la firma AWS SigV4 coincide con el ejemplo oficial de AWS', () => {
+  const empty = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+  const r = require('../server/backup')._sign({
+    method: 'GET', host: 'examplebucket.s3.amazonaws.com', uri: '/test.txt', payloadHash: empty, amzDate: '20130524T000000Z',
+    headers: { Range: 'bytes=0-9', 'x-amz-content-sha256': empty, 'x-amz-date': '20130524T000000Z' },
+    region: 'us-east-1', keyId: 'AKIAIOSFODNN7EXAMPLE', secret: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+  });
+  assert.equal(r.signature, 'f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41');
+});
+
+test('el catálogo inicial se carga una sola vez: lo que el administrador borra no reaparece', async () => {
+  const { q } = require('../server/db');
+  q.run('DELETE FROM titles');
+  await seed();
+  assert.equal(q.get('SELECT COUNT(*) n FROM titles').n, 0);
 });
