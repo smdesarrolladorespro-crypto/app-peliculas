@@ -154,7 +154,7 @@ function createApp({ trustProxy = false, bodyLimit = 8 * 1024 * 1024 } = {}) {
       req.query = Object.fromEntries(url.searchParams);
       req.cookies = parseCookies(req.headers.cookie);
 
-      if (!pathname.startsWith('/api/')) return await serveStatic(req, res, pathname);
+      if (!pathname.startsWith('/api/') && pathname !== '/.well-known/assetlinks.json') return await serveStatic(req, res, pathname);
 
       let matched = null;
       let methodMismatch = false;

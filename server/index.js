@@ -1,6 +1,8 @@
 'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
 const { PORT, PUBLIC_DIR, UPLOAD_DIR, IS_PROD, TRUST_PROXY } = require('./config');
-const { createApp } = require('./lib/http');
+const { createApp, HttpError } = require('./lib/http');
 const { seed } = require('./seed');
 const { allowedHosts } = require('./sources');
 
@@ -31,6 +33,16 @@ function build() {
   }));
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
+
+  // Verificación de la app Android (Digital Asset Links). El administrador sube el archivo
+  // assetlinks.json (el que entrega PWABuilder) a public/ y se publica en /.well-known/assetlinks.json.
+  app.get('/.well-known/assetlinks.json', (req, res) => {
+    let body;
+    try { body = fs.readFileSync(path.join(PUBLIC_DIR, 'assetlinks.json')); } catch { throw new HttpError(404, 'No encontrado'); }
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.end(body);
+  });
 
   require('./routes/auth')(app);
   require('./routes/catalog')(app);
