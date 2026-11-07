@@ -237,6 +237,113 @@ function archiveModal(onPick) {
   });
 }
 
+
+/* ------------------------------------------- Importar desde una página / feed */
+function pageImportModal(onDone) {
+  modal((box, close) => {
+    const url = h('input', { type: 'url', placeholder: 'https://sitio-autorizado.com/catalogo', required: true, 'aria-label': 'Dirección de la página o del feed' });
+    const out = h('div');
+    const go = h('button', { class: 'btn primary', type: 'submit' }, 'Analizar');
+    let items = [];           // candidatos encontrados
+    const picked = new Set(); // índices elegidos
+    let pageLinks = [];
+
+    const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
+    const kindName = { mp4: 'MP4', hls: 'HLS', youtube: 'YouTube', embed: 'Reproductor insertado' };
+
+    function show(info) {
+      clear(out);
+      if (info.skipped && info.skipped.length) {
+        out.append(h('p', { class: 'muted', style: 'font-size:13px' }, 'No se importan (dominio no autorizado): ' + info.skipped.map((x) => `${x.host} (${x.count})`).join(', ') + '. Autorízalos en Fuentes solo si tienes permiso para usar ese contenido.'));
+      }
+      if (info.errors && info.errors.length) out.append(h('p', { class: 'muted', style: 'font-size:13px' }, `${info.errors.length} página(s) no se pudieron leer: ` + info.errors.map((e) => e.message).join(' · ')));
+      if (!items.length) {
+        out.append(h('p', { class: 'muted' }, 'No se encontraron videos que se puedan importar en esta página. Puede que el sitio no publique su catálogo en un formato estándar; prueba con otra página del sitio o agrega el contenido manualmente.'));
+      } else {
+        const all = h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (e) => { picked.clear(); if (e.target.checked) items.forEach((_, i) => picked.add(i)); out.querySelectorAll('.pi-row input').forEach((c) => { c.checked = e.target.checked; }); updateBtn(); } }), `Seleccionar todo (${items.length})`);
+        const list = h('div', { class: 'tmdb-results', style: 'max-height:300px' }, items.map((c, i) => h('label', { class: 'tmdb-item pi-row', style: 'cursor:pointer' },
+          h('input', { type: 'checkbox', style: 'flex:none', onchange: (e) => { if (e.target.checked) picked.add(i); else picked.delete(i); updateBtn(); } }),
+          c.poster_url ? h('img', { src: c.poster_url, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : null,
+          h('div', null, h('b', null, c.title || '(sin título)'), h('p', null, `${kindName[c.video_type] || c.video_type} · ${hostOf(c.video_url)}${c.year ? ' · ' + c.year : ''}${c.runtime ? ' · ' + c.runtime + ' min' : ''}`)))));
+        out.append(all, list);
+      }
+      if (pageLinks.length) {
+        const sel = new Set();
+        const linkBtn = h('button', { type: 'button', class: 'btn small', disabled: true }, 'Analizar las páginas elegidas');
+        const upd = () => { linkBtn.disabled = !sel.size; linkBtn.textContent = sel.size ? `Analizar ${sel.size} página(s)` : 'Analizar las páginas elegidas'; };
+        linkBtn.onclick = async () => {
+          linkBtn.disabled = true; linkBtn.textContent = 'Leyendo páginas…';
+          try {
+            const r = await post('/api/admin/scrape/expand', { urls: [...sel] });
+            const have = new Set(items.map((c) => c.video_url));
+            r.candidates.forEach((c) => { if (!have.has(c.video_url)) items.push(c); });
+            show({ skipped: r.skipped, errors: r.errors });
+          } catch (e) { toast(e.message, 'err'); upd(); }
+        };
+        out.append(h('details', { style: 'margin:12px 0' }, h('summary', { style: 'cursor:pointer' }, `Páginas enlazadas de este sitio (${pageLinks.length}) — elige hasta 15 para buscar videos en ellas`),
+          h('div', { class: 'tmdb-results', style: 'max-height:200px;margin:8px 0' }, pageLinks.map((l) => h('label', { class: 'check', style: 'padding:4px 0;display:flex;gap:8px' },
+            h('input', { type: 'checkbox', onchange: (e) => { if (e.target.checked && sel.size >= 15) { e.target.checked = false; return; } if (e.target.checked) sel.add(l.url); else sel.delete(l.url); upd(); } }),
+            h('span', null, l.text || l.url)))), linkBtn));
+      }
+      if (items.length) out.append(importPanel());
+      updateBtn();
+    }
+
+    let doBtn;
+    const updateBtn = () => { if (doBtn) { doBtn.disabled = !picked.size; doBtn.textContent = picked.size ? `Importar ${picked.size} seleccionado(s)` : 'Elige qué importar'; } };
+
+    function importPanel() {
+      const mode = h('select', { 'aria-label': 'Cómo importar' }, [['movie', 'Cada video es una película'], ['series', 'Todos son episodios de una serie nueva']].map(([v, l]) => h('option', { value: v }, l)));
+      const sTitle = h('input', { maxlength: '150', placeholder: 'Nombre de la serie' });
+      const sBox = h('div', { hidden: true }, fld('Nombre de la serie', sTitle));
+      mode.onchange = () => { sBox.hidden = mode.value !== 'series'; };
+      const anime = h('input', { type: 'checkbox' });
+      doBtn = h('button', { type: 'button', class: 'btn primary', disabled: true }, 'Elige qué importar');
+      const status = h('p', { class: 'muted', style: 'font-size:13px' });
+      doBtn.onclick = async () => {
+        const chosen = [...picked].sort((a, b) => a - b).map((i) => items[i]);
+        if (mode.value === 'series' && !sTitle.value.trim()) { toast('Escribe el nombre de la serie', 'err'); sTitle.focus(); return; }
+        doBtn.disabled = true; let ok = 0; const fails = [];
+        const img = (u) => (u && /^https:/.test(u) ? u : undefined);
+        try {
+          if (mode.value === 'series') {
+            status.textContent = 'Creando la serie…';
+            const { title } = await post('/api/admin/titles', { type: 'series', title: sTitle.value.trim(), overview: '', poster_url: img(chosen[0].poster_url), anime: anime.checked, genres: [] });
+            for (let i = 0; i < chosen.length; i++) {
+              const c = chosen[i]; status.textContent = `Importando episodio ${i + 1} de ${chosen.length}…`;
+              try { await post(`/api/admin/titles/${title.id}/episodes`, { season: 1, number: i + 1, name: c.title || `Episodio ${i + 1}`, overview: c.overview || '', runtime: c.runtime || undefined, video_type: c.video_type, video_url: c.video_url }); ok++; } catch (e) { fails.push(`${c.title || i + 1}: ${e.message}`); }
+            }
+          } else {
+            for (let i = 0; i < chosen.length; i++) {
+              const c = chosen[i]; status.textContent = `Importando ${i + 1} de ${chosen.length}…`;
+              try { await post('/api/admin/titles', { type: 'movie', title: c.title || 'Sin título', overview: c.overview || '', year: c.year || undefined, runtime: c.runtime || undefined, poster_url: img(c.poster_url), video_type: c.video_type, video_url: c.video_url, anime: anime.checked, genres: [] }); ok++; } catch (e) { fails.push(`${c.title || i + 1}: ${e.message}`); }
+            }
+          }
+        } catch (e) { fails.push(e.message); }
+        toast(`Importados: ${ok}${fails.length ? ' · con error: ' + fails.length : ''}`, fails.length ? 'err' : 'ok');
+        if (fails.length) { status.textContent = fails.slice(0, 4).join(' · '); doBtn.disabled = false; }
+        if (ok) onDone();
+        if (!fails.length) close();
+      };
+      return h('div', { class: 'panel', style: 'margin-top:12px' }, fld('Cómo importar', mode), sBox,
+        h('label', { class: 'check', style: 'margin:6px 0 12px;display:flex;gap:8px' }, anime, 'Marcar como anime'),
+        status, doBtn,
+        h('p', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, 'Luego puedes editar cada título: géneros, portada, sinopsis y destacarlo.'));
+    }
+
+    box.append(h('h3', null, 'Importar desde una página o feed'),
+      h('p', { class: 'muted', style: 'font-size:13px;margin-bottom:12px' }, 'Pega la dirección de una página, un feed RSS o un sitemap de video de una fuente autorizada. Se leen solo los datos que el sitio publica en formatos estándar, respetando su robots.txt. Usa únicamente contenido libre o con permiso del titular: tú eres responsable de lo que publiques.'),
+      h('form', { class: 'row-flex', style: 'flex-wrap:nowrap;margin-bottom:12px', onsubmit: async (e) => {
+        e.preventDefault(); go.disabled = true; clear(out); out.append(spinner()); picked.clear();
+        try {
+          const r = await withHostRetry(() => post('/api/admin/scrape/analyze', { url: url.value.trim() }));
+          items = r.candidates; pageLinks = r.links || []; doBtn = null; show(r);
+        } catch (x) { clear(out); out.append(h('div', { class: 'error' }, x.message)); } finally { go.disabled = false; }
+      } }, url, go),
+      out, h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, 'Cerrar')));
+  });
+}
+
 /* ------------------------------------------------------- Editor de títulos */
 async function openEditor(id, stats, genres, onDone, presetType) {
   let data = null;
@@ -360,7 +467,9 @@ async function contentTab(pane, stats, genres) {
   typeSel.onchange = load;
   pane.append(h('div', { class: 'toolbar', style: 'margin-bottom:14px' },
     h('div', { class: 'row-flex' }, q, typeSel),
-    h('button', { class: 'btn primary', onclick: () => openEditor(null, stats, genres, load).catch((e) => toast(e.message, 'err')) }, icon('plus'), 'Nuevo título')),
+    h('div', { class: 'row-flex' },
+      h('button', { class: 'btn', onclick: () => pageImportModal(load) }, 'Importar de una página'),
+      h('button', { class: 'btn primary', onclick: () => openEditor(null, stats, genres, load).catch((e) => toast(e.message, 'err')) }, icon('plus'), 'Nuevo título'))),
   h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, ['', 'Título', 'Tipo', 'Año', 'Destacado', 'Acciones'].map((x) => h('th', null, x)))), body)));
   await load();
 }

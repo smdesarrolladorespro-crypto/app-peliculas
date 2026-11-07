@@ -104,4 +104,4 @@ async function item(id) {
   };
 }
 
-module.exports = { search, item, COLLECTIONS };
+module.exports = { search, item, COLLECTIONS, decodeEntities };

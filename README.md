@@ -35,6 +35,7 @@ server/
   sources.js        ★ fuentes de video autorizadas (lista blanca de dominios y tipos)
   tmdb.js           cliente TMDB opcional (solo metadatos)
   archive.js        importador de Internet Archive (búsqueda y archivos MP4)
+  scrape.js         importador de páginas/feeds de fuentes autorizadas (robots.txt, SSRF, JSON-LD/OG/RSS/sitemap)
   mailer.js         punto de extensión para enviar correo
   seed.js           géneros, administrador y catálogo inicial
   middleware.js     auth (cookie JWT), rol admin, perfil activo
@@ -81,6 +82,13 @@ complemento opcional.
 
 Eres responsable de contar con los derechos o licencias de todo lo que publiques. Los datos de TMDB
 (pósteres, sinopsis, calificaciones) **no otorgan derechos de reproducción**.
+
+**Importar desde una página o feed (“Importar de una página”, en Contenido)**: pegas la URL de una página, un feed RSS/Atom
+o un sitemap de videos de una fuente *autorizada* y FLIXOR lista los videos que encuentra (JSON-LD, Open Graph, `<video>`,
+iframes de YouTube/Vimeo, enclosures). Eliges cuáles importar como películas o como episodios de una serie. Salvaguardas:
+solo HTTPS, solo dominios de la lista de Fuentes (si no está, ofrece autorizarlo), respeta robots.txt, no evade protecciones,
+bloquea direcciones internas (SSRF), límite de tamaño/tiempo/redirecciones y 40 análisis cada 10 min. La legalidad del
+contenido es responsabilidad de quien administra; la herramienta no puede verificarla.
 
 **Importar desde Internet Archive (panel de administración)**: al crear/editar una película, el botón
 “Importar de Internet Archive” busca por título o colección (largometrajes, cine mudo, ciencia ficción y terror,

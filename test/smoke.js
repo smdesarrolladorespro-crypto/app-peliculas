@@ -550,6 +550,81 @@ test('eliminar cuenta: pide la contraseña, borra los datos y el único administ
   assert.equal((await a.call('POST', '/api/auth/delete-account', { password: 'Admin12345' })).status, 400, 'único administrador');
 });
 
+test('importador de páginas: solo fuentes autorizadas, respeta robots.txt y extrae datos estándar', async () => {
+  const scrape = require('../server/scrape');
+  const html = `<html><head><title>Catálogo</title>
+    <meta property="og:description" content="Cine abierto"><meta property="og:image" content="/img/p.jpg">
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[
+      {"@type":"Movie","name":"Película Uno","description":"Sinopsis uno","datePublished":"1922-03-04","image":"https://media.libre.test/uno.jpg",
+       "video":{"@type":"VideoObject","name":"Película Uno","duration":"PT1H30M","contentUrl":"https://media.libre.test/uno.mp4"}},
+      {"@type":"VideoObject","name":"Corto","embedUrl":"https://www.youtube.com/embed/abcdefghijk"}]}</script></head>
+    <body><video><source src="/v/dos.m3u8" type="application/x-mpegURL"></video>
+    <a href="https://otro-sitio.test/ajeno.mp4">ajeno</a><a href="/serie/ep1">Episodio 1</a><a href="/serie/ep2">Episodio 2</a><a href="/foto.jpg">img</a></body></html>`;
+  const pages = {
+    'https://libre.test/robots.txt': { status: 200, body: 'User-agent: *\nDisallow: /privado\nAllow: /privado/ok' },
+    'https://libre.test/catalogo': { status: 200, body: html },
+    'https://libre.test/serie/ep1': { status: 200, body: '<meta property="og:title" content="Ep 1"><video src="https://media.libre.test/e1.mp4"></video>' },
+    'https://libre.test/serie/ep2': { status: 404, body: '' },
+    'https://libre.test/feed.xml': { status: 200, ct: 'application/rss+xml', body: `<?xml version="1.0"?><rss xmlns:media="http://search.yahoo.com/mrss/"><channel><title>Feed</title>
+      <item><title><![CDATA[Cortometraje]]></title><description>Un corto</description><link>https://libre.test/c1</link><pubDate>Mon, 01 Jan 2018 00:00:00 GMT</pubDate>
+      <enclosure url="https://media.libre.test/c1.mp4" type="video/mp4"/><media:thumbnail url="https://media.libre.test/c1.jpg"/></item></channel></rss>` },
+    'https://libre.test/privado/x': { status: 200, body: '<video src="https://media.libre.test/x.mp4"></video>' },
+  };
+  scrape._setFetcher(async (u) => { const p = pages[u]; if (!p) return { status: 404, headers: {}, body: Buffer.from('') }; return { status: p.status, headers: { 'content-type': p.ct || 'text/html' }, body: Buffer.from(p.body) }; });
+  scrape._setDelay(0);
+  const a = client();
+  await a.call('POST', '/api/auth/login', { email: 'admin@cineplus.local', password: 'Admin12345' });
+  try {
+    // dominio no autorizado: se pide autorizarlo primero
+    let r = await a.call('POST', '/api/admin/scrape/analyze', { url: 'https://libre.test/catalogo' });
+    assert.equal(r.status, 400); assert.equal(r.data.code, 'host_not_allowed'); assert.equal(r.data.host, 'libre.test');
+    assert.equal((await a.call('POST', '/api/admin/scrape/analyze', { url: 'http://libre.test/catalogo' })).status, 400, 'solo HTTPS');
+    assert.equal((await a.call('POST', '/api/admin/scrape/analyze', { url: 'nada' })).status, 400);
+    assert.equal((await client().call('POST', '/api/admin/scrape/analyze', { url: 'https://libre.test/' })).status, 401);
+    for (const host of ['libre.test', 'media.libre.test']) assert.equal((await a.call('POST', '/api/admin/hosts', { host, note: 'prueba' })).status < 300, true);
+
+    r = await a.call('POST', '/api/admin/scrape/analyze', { url: 'https://libre.test/catalogo' });
+    assert.equal(r.status, 200);
+    const byUrl = Object.fromEntries(r.data.candidates.map((c) => [c.video_url, c]));
+    const uno = byUrl['https://media.libre.test/uno.mp4'];
+    assert.ok(uno && uno.title === 'Película Uno' && uno.year === 1922 && uno.runtime === 90 && uno.video_type === 'mp4');
+    assert.equal(uno.poster_url, 'https://media.libre.test/uno.jpg');
+    assert.equal(byUrl['https://www.youtube.com/embed/abcdefghijk'].video_type, 'youtube');
+    assert.equal(byUrl['https://libre.test/v/dos.m3u8'].video_type, 'hls');
+    assert.equal(byUrl['https://libre.test/v/dos.m3u8'].overview, 'Cine abierto');
+    assert.ok(!byUrl['https://otro-sitio.test/ajeno.mp4'], 'no se importan videos de dominios no autorizados');
+    assert.deepEqual(r.data.skipped, [{ host: 'otro-sitio.test', count: 1 }]);
+    assert.deepEqual(r.data.links.map((l) => l.url), ['https://libre.test/serie/ep1', 'https://libre.test/serie/ep2']);
+
+    // explorar páginas enlazadas (una falla y se informa)
+    r = await a.call('POST', '/api/admin/scrape/expand', { urls: ['https://libre.test/serie/ep1', 'https://libre.test/serie/ep2'] });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.candidates.length, 1); assert.equal(r.data.candidates[0].title, 'Ep 1');
+    assert.equal(r.data.errors.length, 1);
+    assert.equal((await a.call('POST', '/api/admin/scrape/expand', { urls: [] })).status, 400);
+
+    // feed RSS
+    r = await a.call('POST', '/api/admin/scrape/analyze', { url: 'https://libre.test/feed.xml' });
+    assert.equal(r.data.kind, 'feed');
+    assert.deepEqual([r.data.candidates[0].title, r.data.candidates[0].year, r.data.candidates[0].poster_url], ['Cortometraje', 2018, 'https://media.libre.test/c1.jpg']);
+
+    // robots.txt
+    r = await a.call('POST', '/api/admin/scrape/analyze', { url: 'https://libre.test/privado/x' });
+    assert.equal(r.status, 403); assert.match(r.data.error || r.data.message || '', /robots/);
+  } finally { scrape._setFetcher(null); scrape._setDelay(400); }
+});
+
+test('importador: robots.txt (reglas más específicas) y bloqueo de direcciones internas', () => {
+  const { parseRobots, isPrivateIp } = require('../server/scrape');
+  const ok = parseRobots('User-agent: *\nDisallow: /a\nAllow: /a/b\nDisallow: /*.pdf$\n');
+  assert.equal(ok('/a/c'), false); assert.equal(ok('/a/b'), true); assert.equal(ok('/z'), true);
+  assert.equal(ok('/x.pdf'), false); assert.equal(ok('/x.pdf?v=1'), true);
+  assert.equal(parseRobots('User-agent: *\nDisallow: /')('/cualquier'), false);
+  assert.equal(parseRobots('User-agent: otro\nDisallow: /')('/cualquier'), true);
+  for (const ip of ['127.0.0.1', '10.1.2.3', '192.168.0.9', '172.16.5.5', '169.254.169.254', '100.64.0.1', '::1', 'fd00::1', 'fe80::1', '::ffff:127.0.0.1', '0.0.0.0']) assert.equal(isPrivateIp(ip), true, ip);
+  for (const ip of ['8.8.8.8', '151.101.1.1', '2606:4700::1111']) assert.equal(isPrivateIp(ip), false, ip);
+});
+
 test('el catálogo inicial se carga una sola vez: lo que el administrador borra no reaparece', async () => {
   const { q } = require('../server/db');
   q.run('DELETE FROM titles');

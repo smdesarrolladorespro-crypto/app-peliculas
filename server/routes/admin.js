@@ -3,13 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { q, tx } = require('../db');
-const { HttpError } = require('../lib/http');
+const { HttpError, rateLimit } = require('../lib/http');
 const { auth, admin } = require('../middleware');
 const { UPLOAD_DIR } = require('../config');
 const { validateSource, validateImage, validateSubtitles, allowedHosts, hostList, normalizeHost, invalidate, TYPES } = require('../sources');
 const { getTitle, parseSubs } = require('../catalog');
 const tmdb = require('../tmdb');
 const archive = require('../archive');
+const scrape = require('../scrape');
 
 const IMG_EXT = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'text/vtt': '.vtt' };
 
@@ -266,6 +267,15 @@ module.exports = (app) => {
   });
 
   // ---- Internet Archive (importador de fuentes) --------------------------------
+  // Importar desde una página o feed de una fuente autorizada (ver server/scrape.js)
+  const scrapeLimiter = rateLimit({ name: 'scrape', max: 40, windowMs: 10 * 60_000 });
+  app.post('/api/admin/scrape/analyze', ...guard, scrapeLimiter, async (req, res) => {
+    res.json(await scrape.analyze(String(req.body.url || '').trim()));
+  });
+  app.post('/api/admin/scrape/expand', ...guard, scrapeLimiter, async (req, res) => {
+    res.json(await scrape.expand(req.body.urls));
+  });
+
   app.get('/api/admin/archive/search', ...guard, async (req, res) => {
     res.json({ items: await archive.search(str(req.query.q, 100, 'Búsqueda'), String(req.query.collection || '')), collections: archive.COLLECTIONS });
   });
