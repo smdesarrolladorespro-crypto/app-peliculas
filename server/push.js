@@ -83,7 +83,7 @@ async function sendOne(sub, payload) {
 // message: { title, body, url }. userIds: lista opcional; sin ella, se envía a todos los suscritos.
 async function broadcast(message, userIds) {
   const payload = JSON.stringify({
-    title: String(message.title || 'CINEPLUS').slice(0, 80),
+    title: String(message.title || 'FLIXOR').slice(0, 80),
     body: String(message.body || '').slice(0, 200),
     url: message.url || '/',
     icon: '/img/icon-192.png',

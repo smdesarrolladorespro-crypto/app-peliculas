@@ -22,16 +22,17 @@ module.exports = (app) => {
       featured,
       popular: listTitles({ sort: 'popular', limit: 20 }).items,
       latest: listTitles({ sort: 'recent', limit: 20 }).items,
-      movies: listTitles({ type: 'movie', sort: 'rating', limit: 20 }).items,
-      series: listTitles({ type: 'series', sort: 'rating', limit: 20 }).items,
+      movies: listTitles({ type: 'movie', anime: '0', sort: 'rating', limit: 20 }).items,
+      series: listTitles({ type: 'series', anime: '0', sort: 'rating', limit: 20 }).items,
+      anime: listTitles({ anime: '1', sort: 'recent', limit: 20 }).items,
       genres: rows,
     });
   });
 
   // Catálogo con filtros y búsqueda
   app.get('/api/titles', auth, (req, res) => {
-    const { type, genre, q: text, sort, limit, offset } = req.query;
-    res.json(listTitles({ type, genre, text: text && String(text).slice(0, 100), sort, limit, offset }));
+    const { type, genre, q: text, sort, limit, offset, anime } = req.query;
+    res.json(listTitles({ type, genre, anime, text: text && String(text).slice(0, 100), sort, limit, offset }));
   });
 
   // Detalle (sin exponer las URLs de video; esas se piden con /api/watch)

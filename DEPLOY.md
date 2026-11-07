@@ -1,4 +1,4 @@
-# Publicar CINEPLUS en Internet (GitHub + Render)
+# Publicar FLIXOR en Internet (GitHub + Render)
 
 ## 1. Subir el proyecto a GitHub (sin usar comandos)
 1. Descomprime `cineplus.zip`.
@@ -40,7 +40,7 @@ En **Environment** agrega estas variables:
 > `ADMIN_EMAIL` y `ADMIN_PASSWORD` solo se usan **la primera vez**, cuando la base de datos aún no tiene administrador.
 
 ## 3. IMPORTANTE: que no se borren los datos
-CINEPLUS guarda usuarios, perfiles, favoritos, historial, películas, series e imágenes subidas en la carpeta de datos.
+FLIXOR guarda usuarios, perfiles, favoritos, historial, películas, series e imágenes subidas en la carpeta de datos.
 En el plan **gratuito** de Render ese disco se borra cada vez que el servicio se reinicia o se "duerme". Hay dos formas de
 protegerlos (usa una, o ambas):
 
@@ -49,7 +49,7 @@ Usa una instancia de pago (por ejemplo *Starter*), entra a **Disks → Add Disk*
 y define `DATA_DIR=/var/data`. Consulta los precios vigentes en Render. Con esto el servicio además no se duerme.
 
 ### Opción B: copia de seguridad automática en un almacenamiento gratuito (funciona en el plan gratis)
-CINEPLUS sube sola una copia a un almacenamiento compatible con S3 y la restaura al arrancar:
+FLIXOR sube sola una copia a un almacenamiento compatible con S3 y la restaura al arrancar:
 - cada 2 minutos, **si hubo cambios** (también cuando el servidor se apaga o se duerme);
 - guarda la base de datos, las imágenes subidas y una copia diaria en la carpeta `daily/`;
 - si la copia no se puede leer al arrancar, el servidor **no arranca** (así nunca se sobrescribe una copia buena con una base vacía).
@@ -86,7 +86,7 @@ Opción recomendada, **Brevo** (plan gratis con unos 300 correos al día):
 | Variable | Valor |
 |---|---|
 | `BREVO_API_KEY` | la clave de Brevo |
-| `MAIL_FROM` | `CINEPLUS <tu-correo-verificado@gmail.com>` |
+| `MAIL_FROM` | `FLIXOR <tu-correo-verificado@gmail.com>` |
 
 5. Entra al panel → **Resumen → Sistema** → **Enviar correo de prueba**. Debe llegarte un mensaje.
 
@@ -104,3 +104,7 @@ al generar el paquete en PWABuilder deja activada la opción de **notificaciones
 1. Abre tu dirección de Render e inicia sesión con `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 2. Panel de administración → **Fuentes** y **Contenido** para agregar películas y series.
 3. Para la APK, usa esa misma dirección (PWABuilder o Bubblewrap piden la URL y los íconos que ya incluye la app).
+
+## 6. Cambiar el nombre del APK a FLIXOR
+El nombre dentro de la app ya es FLIXOR. El que aparece bajo el icono del teléfono lo fija el APK, así que debes generarlo de nuevo en PWABuilder (nombre **FLIXOR**).
+Para no tener que cambiar nada más, en PWABuilder conserva el **mismo Package ID** y sube la **misma llave de firma** (*signing key*) del APK anterior. Si usas un Package ID o una llave nueva, debes reemplazar `public/assetlinks.json` por el nuevo que trae el zip, o la app volverá a mostrar la barra del navegador.

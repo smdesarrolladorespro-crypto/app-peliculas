@@ -1,4 +1,4 @@
-# CINEPLUS
+# FLIXOR
 
 Plataforma web de películas y series con tema oscuro (negro, rojo y gris), diseño adaptable
 (teléfono, tablet y escritorio), cuentas de usuario, perfiles, favoritos, historial, reproductor
@@ -54,7 +54,9 @@ test/smoke.js
 
 - **Flujo**: pantalla de bienvenida (splash) → iniciar sesión / crear cuenta → elegir perfil → inicio.
 - **Inicio**: héroe con destacados, *Continuar viendo*, *Populares*, *Estrenos*, Películas, Series y una fila por género.
-- **Secciones**: Inicio, Películas, Series, Géneros (Acción, Terror, Comedia, Romance, Ciencia ficción, Drama, Animación, Documentales), Favoritos, Mi perfil, Historial. Buscador en la barra superior.
+- **Secciones**: Inicio, Películas, Series, **Anime** (se marca con “Es anime” al crear o editar un título) y **Biblioteca** (Favoritos, Historial y Géneros: Acción, Terror, Comedia, Romance, Ciencia ficción, Drama, Animación, Documentales), más Mi perfil. Buscador en la barra superior.
+- **Sugerencias y comentarios**: los usuarios piden títulos desde la app; se guardan en el panel (pestaña Sugerencias) y se envían a `sm.desarrolladores.pro@gmail.com` (cambiable con `SUGGESTIONS_EMAIL`).
+- **Privacidad y Términos y condiciones**: páginas públicas (`#/privacy`, `#/terms`), enlazadas desde la bienvenida, el registro y Mi perfil. Los usuarios pueden eliminar su cuenta desde Mi perfil. Es una plantilla general: conviene que la revise una persona con conocimientos legales.
 - **Cuentas**: registro (nombre, correo, contraseña), login/logout, recuperación de contraseña por enlace de un solo uso (30 min), sesión persistente (“mantener sesión”: cookie de 30 días), cambio de nombre y contraseña.
 - **Perfiles** (hasta 5 por cuenta): cada uno con sus propios favoritos e historial.
 - **Reproductor**: pausa, ±10 s, barra de progreso (ratón y táctil), volumen, velocidad, subtítulos WebVTT, pantalla completa, atajos de teclado (espacio/K, ←/→, ↑/↓, M, F, C), reanudar donde quedó, temporadas/episodios y cuenta atrás al siguiente episodio.
@@ -62,7 +64,7 @@ test/smoke.js
 
 ## Fuentes legales y cómo añadir nuevas
 
-CINEPLUS **no aloja ni enlaza contenido protegido**. Cada título/episodio guarda un tipo y una URL de
+FLIXOR **no aloja ni enlaza contenido protegido**. Cada título/episodio guarda un tipo y una URL de
 una fuente autorizada, y el servidor (`server/sources.js`) solo acepta:
 
 - URLs **HTTPS** de dominios de la lista blanca (por defecto: `archive.org`, `download.blender.org`,

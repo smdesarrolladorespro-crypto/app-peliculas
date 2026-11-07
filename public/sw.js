@@ -1,11 +1,11 @@
 'use strict';
 // Service worker: hace la app instalable (PWA / APK), abre la "cáscara" al instante desde el dispositivo
-// (así, si el servidor gratuito está dormido, se ve la animación de CINEPLUS y no la página de espera del
+// (así, si el servidor gratuito está dormido, se ve la animación de FLIXOR y no la página de espera del
 // hosting) y recibe notificaciones push. Nunca guarda /api, /uploads ni video: siempre van a la red.
-const CACHE = 'cineplus-shell-v3';
+const CACHE = 'flixor-shell-v4';
 const SHELL = [
   '/', '/css/styles.css',
-  '/js/app.js', '/js/api.js', '/js/ui.js', '/js/player.js', '/js/landscape.js', '/js/push.js', '/js/admin.js',
+  '/js/app.js', '/js/api.js', '/js/ui.js', '/js/player.js', '/js/landscape.js', '/js/legal.js', '/js/push.js', '/js/admin.js',
   '/img/icon.svg', '/img/icon-192.png', '/img/icon-512.png', '/manifest.webmanifest', '/offline.html',
 ];
 
@@ -17,7 +17,7 @@ self.addEventListener('activate', (e) => {
 });
 
 // Lo guardado se sirve al instante y se actualiza en segundo plano (la nueva versión se ve en la siguiente apertura).
-// Solo se guardan respuestas que llevan la marca X-App de CINEPLUS: así nunca se guarda la página de espera del hosting.
+// Solo se guardan respuestas que llevan la marca X-App de FLIXOR: así nunca se guarda la página de espera del hosting.
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
@@ -42,7 +42,7 @@ self.addEventListener('fetch', (e) => {
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'CINEPLUS', {
+  e.waitUntil(self.registration.showNotification(d.title || 'FLIXOR', {
     body: d.body || '', icon: d.icon || '/img/icon-192.png', data: { url: d.url || '/' },
   }));
 });

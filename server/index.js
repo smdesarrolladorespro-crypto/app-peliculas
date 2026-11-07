@@ -49,6 +49,7 @@ function build() {
   require('./routes/me')(app);
   require('./routes/admin')(app);
   require('./routes/push')(app);
+  require('./routes/suggest')(app);
 
   app.static('/uploads', UPLOAD_DIR);
   app.static('/', PUBLIC_DIR, { spa: true });
@@ -63,7 +64,7 @@ async function start() {
   const { db } = require('./db');
   await seed();
   const app = build();
-  const server = app.listen(PORT, () => console.log(`CINEPLUS en http://localhost:${PORT}`));
+  const server = app.listen(PORT, () => console.log(`FLIXOR en http://localhost:${PORT}`));
   if (backup.enabled()) {
     console.log('[copias] Copias de seguridad activas.');
     backup.startSchedule(db);

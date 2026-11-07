@@ -251,6 +251,7 @@ async function openEditor(id, stats, genres, onDone, presetType) {
     const overview = h('textarea', { maxlength: '4000' }, t.overview || '');
     const tmdbId = h('input', { type: 'number', min: '1', value: t.tmdb_id || '' });
     const featured = h('input', { type: 'checkbox', checked: !!t.featured });
+    const anime = h('input', { type: 'checkbox', checked: !!t.anime });
     const poster = urlWithUpload('Póster (vertical 2:3)', t.poster_url && !t.poster_url.startsWith('data:') ? t.poster_url : '', { hint: t.poster_url && t.poster_url.startsWith('data:') ? 'Póster generado por defecto. Pega una URL o sube una imagen para reemplazarlo.' : 'JPG, PNG o WebP hasta 5 MB' });
     const backdrop = urlWithUpload('Imagen de fondo (horizontal 16:9)', t.backdrop_url && !t.backdrop_url.startsWith('data:') ? t.backdrop_url : '');
     const keepPoster = t.poster_url && t.poster_url.startsWith('data:') ? t.poster_url : null;
@@ -290,7 +291,7 @@ async function openEditor(id, stats, genres, onDone, presetType) {
         const body = {
           type: type.value, title: title.value, overview: overview.value, year: year.value, rating: rating.value, runtime: runtime.value,
           poster_url: poster.input.value.trim() || keepPoster, backdrop_url: backdrop.input.value.trim() || keepBackdrop,
-          featured: featured.checked, tmdb_id: tmdbId.value || null, genres: checks.filter((c) => c.el.checked).map((c) => c.slug),
+          featured: featured.checked, anime: anime.checked, tmdb_id: tmdbId.value || null, genres: checks.filter((c) => c.el.checked).map((c) => c.slug),
         };
         // Los pósteres generados por defecto (data:) no se reenvían: el servidor conserva el actual
         if (body.poster_url && body.poster_url.startsWith('data:')) delete body.poster_url;
@@ -302,7 +303,7 @@ async function openEditor(id, stats, genres, onDone, presetType) {
           if (!id) {
             const label = r.title.type === 'series' ? 'Nueva serie' : 'Nueva película';
             confirmBox(`¿Avisar a los usuarios por notificación de “${r.title.title}”?`, { okText: 'Enviar aviso' })
-              .then((yes) => { if (yes) notifyModal({ title: `${label} en CINEPLUS`, body: r.title.title, titleId: r.title.id }); });
+              .then((yes) => { if (yes) notifyModal({ title: `${label} en FLIXOR`, body: r.title.title, titleId: r.title.id }); });
           }
           if (!id && r.title.type === 'series') openEditor(r.title.id, stats, genres, onDone).catch((e) => toast(e.message, 'err'));
         } catch (x) { err.textContent = x.message; err.hidden = false; } finally { save.disabled = false; }
@@ -312,7 +313,8 @@ async function openEditor(id, stats, genres, onDone, presetType) {
       fld('Título', title), fld('Sinopsis', overview),
       h('div', { class: 'field' }, h('label', null, 'Géneros'), h('div', { class: 'genre-checks' }, checks.map((c) => h('label', { class: 'check' }, c.el, c.name)))),
       h('div', { class: 'form-grid' }, poster.el, backdrop.el),
-      h('div', { class: 'form-grid' }, fld('TMDB ID (opcional)', tmdbId), h('div', { class: 'field' }, h('label', null, 'Pantalla principal'), h('label', { class: 'check', style: 'min-height:44px' }, featured, 'Destacar en el inicio'))),
+      h('div', { class: 'form-grid' }, fld('TMDB ID (opcional)', tmdbId), h('div', { class: 'field' }, h('label', null, 'Pantalla principal'), h('label', { class: 'check', style: 'min-height:44px' }, featured, 'Destacar en el inicio')),
+        h('div', { class: 'field' }, h('label', null, 'Categoría'), h('label', { class: 'check', style: 'min-height:44px' }, anime, 'Es anime (aparece en la sección Anime)'))),
       movieBox,
       h('div', { class: 'foot' }, h('button', { type: 'button', class: 'btn', onclick: close }, 'Cerrar'), save)));
 
@@ -347,7 +349,7 @@ async function contentTab(pane, stats, genres) {
         h('td', null, star),
         h('td', null, h('div', { class: 'actions-cell' },
           h('button', { class: 'btn small', onclick: () => openEditor(t.id, stats, genres, load).catch((e) => toast(e.message, 'err')) }, icon('edit'), 'Editar'),
-          h('button', { class: 'icon-btn', 'aria-label': 'Avisar a los usuarios de ' + t.title, title: 'Avisar a los usuarios', onclick: () => notifyModal({ title: (t.type === 'series' ? 'Serie' : 'Película') + ' en CINEPLUS', body: t.title, titleId: t.id }) }, icon('bell')),
+          h('button', { class: 'icon-btn', 'aria-label': 'Avisar a los usuarios de ' + t.title, title: 'Avisar a los usuarios', onclick: () => notifyModal({ title: (t.type === 'series' ? 'Serie' : 'Película') + ' en FLIXOR', body: t.title, titleId: t.id }) }, icon('bell')),
           h('button', { class: 'btn small danger', 'aria-label': 'Eliminar ' + t.title, onclick: async () => {
             if (!(await confirmBox(`¿Eliminar “${t.title}”${t.type === 'series' ? ' y todos sus episodios' : ''}? También se quitará de favoritos e historiales.`, { okText: 'Eliminar', danger: true }))) return;
             try { await del('/api/admin/titles/' + t.id); toast('Título eliminado', 'ok'); load(); } catch (e) { toast(e.message, 'err'); }
@@ -361,6 +363,27 @@ async function contentTab(pane, stats, genres) {
     h('button', { class: 'btn primary', onclick: () => openEditor(null, stats, genres, load).catch((e) => toast(e.message, 'err')) }, icon('plus'), 'Nuevo título')),
   h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, ['', 'Título', 'Tipo', 'Año', 'Destacado', 'Acciones'].map((x) => h('th', null, x)))), body)));
   await load();
+}
+
+async function suggestionsTab(pane) {
+  const { items } = await get('/api/admin/suggestions');
+  const kinds = { movie: 'Película', series: 'Serie', anime: 'Anime', comment: 'Comentario' };
+  if (!items.length) return pane.append(h('div', { class: 'empty' }, icon('chat'), h('p', null, 'Todavía no hay sugerencias.')));
+  const list = h('div');
+  items.forEach((s) => {
+    const row = h('div', { class: 'list-item', style: s.done ? 'opacity:.55' : '' },
+      h('div', { style: 'grid-column:1/-1;display:flex;gap:12px;align-items:flex-start' },
+        h('div', { class: 'grow' },
+          h('div', null, h('span', { class: 'badge-red', style: 'margin-right:8px' }, kinds[s.kind] || s.kind), h('b', null, s.title || '(comentario)')),
+          s.note ? h('p', { style: 'margin:6px 0 0;white-space:pre-wrap' }, s.note) : null,
+          h('div', { class: 'muted', style: 'font-size:12px;margin-top:6px' }, `${s.user_name || 'Usuario eliminado'} · ${new Date(s.created_at).toLocaleString('es')}`)),
+        h('button', { class: 'btn small', onclick: async () => { try { await patch('/api/admin/suggestions/' + s.id, { done: !s.done }); s.done = !s.done; row.style.opacity = s.done ? '.55' : ''; b1.textContent = s.done ? 'Reabrir' : 'Hecho'; } catch (e) { toast(e.message, 'err'); } } }, ''),
+        h('button', { class: 'icon-btn', 'aria-label': 'Eliminar sugerencia', onclick: async () => { try { await del('/api/admin/suggestions/' + s.id); row.remove(); } catch (e) { toast(e.message, 'err'); } } }, icon('trash'))));
+    const b1 = row.querySelector('.btn.small');
+    b1.textContent = s.done ? 'Reabrir' : 'Hecho';
+    list.append(row);
+  });
+  pane.append(h('p', { class: 'muted', style: 'margin-bottom:12px' }, 'Lo que piden los usuarios. También llega a sm.desarrolladores.pro@gmail.com cuando el correo está configurado.'), list);
 }
 
 async function usersTab(pane) {
@@ -463,7 +486,7 @@ async function systemPanel() {
 
 function overviewTab(pane, stats) {
   systemPanel().then((el) => pane.append(el));
-  pane.append(h('div', { class: 'stats' }, [['Usuarios', stats.users], ['Películas', stats.movies], ['Series', stats.series], ['Episodios', stats.episodes], ['Destacados', stats.featured], ['Reproducciones', stats.plays]].map(([l, v]) => h('div', { class: 'stat' }, h('b', null, v), h('span', null, l)))),
+  pane.append(h('div', { class: 'stats' }, [['Usuarios', stats.users], ['Películas', stats.movies], ['Series', stats.series], ['Anime', stats.anime], ['Episodios', stats.episodes], ['Destacados', stats.featured], ['Reproducciones', stats.plays]].map(([l, v]) => h('div', { class: 'stat' }, h('b', null, v), h('span', null, l)))),
     h('div', { class: 'panel' }, h('h3', null, 'Fuentes de video autorizadas'),
       h('p', { class: 'muted', style: 'margin-bottom:10px' }, 'El servidor rechaza cualquier fuente que no sea HTTPS de uno de estos dominios (o un archivo subido). Gestiona la lista en la pestaña Fuentes.'),
       h('div', { class: 'chips' }, stats.allowedHosts.map((x) => h('span', { class: 'chip' }, x)))),
@@ -474,7 +497,7 @@ function overviewTab(pane, stats) {
 export async function renderAdmin({ box, alive }, { genres, refreshGenres }) {
   const stats = await get('/api/admin/stats');
   if (!alive()) return;
-  const tabs = [['overview', 'Resumen'], ['content', 'Contenido'], ['sources', 'Fuentes'], ['users', 'Usuarios']];
+  const tabs = [['overview', 'Resumen'], ['content', 'Contenido'], ['sources', 'Fuentes'], ['suggestions', 'Sugerencias'], ['users', 'Usuarios']];
   const pane = h('div');
   const bar = h('div', { class: 'tabs', role: 'tablist' });
   let current = sessionStorage.getItem('cp_admin_tab') || 'overview';
@@ -491,6 +514,7 @@ export async function renderAdmin({ box, alive }, { genres, refreshGenres }) {
     if (key === 'overview') overviewTab(pane, stats);
     else if (key === 'content') await contentTab(pane, stats, genres);
     else if (key === 'sources') await sourcesTab(pane);
+    else if (key === 'suggestions') await suggestionsTab(pane);
     else await usersTab(pane);
   };
   tabs.forEach(([k, l]) => bar.append(h('button', { role: 'tab', 'data-k': k, onclick: () => show(k).catch((e) => toast(e.message, 'err')) }, l)));

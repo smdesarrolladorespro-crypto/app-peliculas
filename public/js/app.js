@@ -3,6 +3,7 @@ import { S, api, get, post, put, patch, del, loadFavs, toggleFav, setSession, se
 import { createPlayer } from './player.js';
 import { pushState, enablePush, disablePush, detachPush } from './push.js';
 import { enforceLandscape } from './landscape.js';
+import { privacyDoc, termsDoc } from './legal.js';
 
 const root = document.getElementById('app');
 const COLORS = ['#e50914', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
@@ -134,11 +135,12 @@ function ensureShell(path) {
   if (!shell || !root.contains(shell.main)) {
     clear(root);
     const main = h('main', { id: 'main' });
+    // [destino, texto, icono, clave de resaltado]. "Biblioteca" agrupa Favoritos, Historial y Géneros.
     const links = [
       ['/home', 'Inicio', 'home'], ['/movies', 'Películas', 'film'], ['/series', 'Series', 'tv'],
-      ['/genres', 'Géneros', 'grid'], ['/favorites', 'Favoritos', 'heart'], ['/history', 'Historial', 'clock'],
+      ['/anime', 'Anime', 'spark'], ['/favorites', 'Biblioteca', 'bookmark', '/library'],
     ];
-    const search = h('input', { type: 'search', placeholder: 'Buscar películas y series', 'aria-label': 'Buscar', autocomplete: 'off', maxlength: '100' });
+    const search = h('input', { type: 'search', placeholder: 'Buscar…', 'aria-label': 'Buscar', autocomplete: 'off', maxlength: '100' });
     let t;
     search.addEventListener('input', () => {
       clearTimeout(t);
@@ -160,18 +162,20 @@ function ensureShell(path) {
       h('div', { class: 'who' }, S.profile.name + ' · ' + S.user.email),
       h('a', { href: '#/profile', onclick: closeMenu }, icon('user'), 'Mi perfil'),
       h('a', { href: '#/history', onclick: closeMenu }, icon('clock'), 'Historial'),
+      h('a', { href: '#/suggest', onclick: closeMenu }, icon('chat'), 'Sugerencias'),
+      h('a', { href: '#/privacy', onclick: closeMenu }, icon('shield'), 'Privacidad y términos'),
       h('a', { href: '#/profiles', onclick: closeMenu }, icon('swap'), 'Cambiar de perfil'),
       S.user.role === 'admin' ? h('a', { href: '#/admin', onclick: closeMenu }, icon('shield'), 'Panel de administración') : null,
       h('hr'),
       h('button', { onclick: doLogout }, icon('logout'), 'Cerrar sesión'));
 
     const top = h('header', { class: 'topbar' },
-      h('a', { href: '#/home', 'aria-label': 'CINEPLUS - Inicio' }, logo()),
-      h('nav', { 'aria-label': 'Principal' }, links.map(([p, l]) => h('a', { href: '#' + p, 'data-p': p }, l))),
+      h('a', { href: '#/home', 'aria-label': 'FLIXOR - Inicio' }, logo()),
+      h('nav', { 'aria-label': 'Principal' }, links.map(([p, l, , k]) => h('a', { href: '#' + p, 'data-p': k || p }, l))),
       h('div', { class: 'spacer' }),
       h('div', { class: 'searchbox' }, icon('search'), search),
       h('div', { class: 'menu-wrap' }, avatarBtn, menu));
-    const bottom = h('nav', { class: 'bottomnav', 'aria-label': 'Navegación móvil' }, links.map(([p, l, i]) => h('a', { href: '#' + p, 'data-p': p }, icon(i), l)));
+    const bottom = h('nav', { class: 'bottomnav', 'aria-label': 'Navegación móvil' }, links.map(([p, l, i, k]) => h('a', { href: '#' + p, 'data-p': k || p }, icon(i), l)));
     const onScroll = () => top.classList.toggle('solid', window.scrollY > 20);
     if (shellDispose) shellDispose();
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -181,7 +185,7 @@ function ensureShell(path) {
     onScroll();
   }
   const base = '/' + (path.split('/')[1] || '');
-  const active = base === '/genre' ? '/genres' : base === '/title' ? null : base;
+  const active = ['/genres', '/genre', '/favorites', '/history'].includes(base) ? '/library' : base === '/title' ? null : base;
   shell.top.querySelectorAll('a[data-p]').forEach((a) => a.classList.toggle('active', a.dataset.p === active));
   shell.bottom.querySelectorAll('a[data-p]').forEach((a) => a.classList.toggle('active', a.dataset.p === active));
   shell.menu.hidden = true;
@@ -207,11 +211,12 @@ route('/welcome', ({ box }) => {
   box.append(h('div', { class: 'welcome' },
     h('div', { class: 'content' },
       logo(true),
-      h('h1', null, 'Películas y series gratis, de fuentes legales'),
+      h('h1', null, 'Películas, series y anime gratis'),
       h('p', null, 'Disfruta de cine de dominio público y obras abiertas, guarda tus favoritos y continúa viendo justo donde lo dejaste.'),
       h('div', { class: 'actions' },
         h('a', { class: 'btn primary', href: '#/login' }, 'Iniciar sesión'),
-        h('a', { class: 'btn', href: '#/register' }, 'Crear cuenta')))));
+        h('a', { class: 'btn', href: '#/register' }, 'Crear cuenta')),
+      h('p', { class: 'legal-links' }, h('a', { href: '#/privacy' }, 'Privacidad'), ' · ', h('a', { href: '#/terms' }, 'Términos y condiciones')))));
 }, { public: true });
 
 function authLayout(box, title, body, links) {
@@ -265,6 +270,7 @@ route('/register', ({ box }) => {
   } }, f.err, field('Nombre', name), field('Correo electrónico', email),
   field('Contraseña', pass, 'Mínimo 8 caracteres, con letras y números'), field('Repetir contraseña', pass2),
   h('label', { class: 'check', style: 'margin-bottom:16px' }, rem, 'Mantener la sesión iniciada'), btn);
+  form.append(h('p', { class: 'legal-links', style: 'margin:14px 0 0' }, 'Al crear tu cuenta aceptas los ', h('a', { href: '#/terms' }, 'Términos y condiciones'), ' y la ', h('a', { href: '#/privacy' }, 'Política de privacidad'), '.'));
   authLayout(box, 'Crear cuenta', form, [h('span', null, '¿Ya tienes cuenta? ', h('a', { href: '#/login' }, 'Iniciar sesión'))]);
 }, { public: true });
 
@@ -405,13 +411,19 @@ route('/home', async ({ box, alive }) => {
       shelf('Estrenos', home.latest.map((t) => posterCard(t))),
       shelf('Películas', home.movies.map((t) => posterCard(t)), { moreHref: '#/movies' }),
       shelf('Series', home.series.map((t) => posterCard(t)), { moreHref: '#/series' }),
-      home.genres.map((g) => shelf(g.name, g.items.map((t) => posterCard(t)), { moreHref: '#/genre/' + g.slug }))));
+      home.anime && home.anime.length ? shelf('Anime', home.anime.map((t) => posterCard(t)), { moreHref: '#/anime' }) : null,
+      home.genres.map((g) => shelf(g.name, g.items.map((t) => posterCard(t)), { moreHref: '#/genre/' + g.slug })),
+      h('div', { class: 'cta-card' }, icon('chat'), h('div', { class: 'grow' }, h('b', null, '¿Qué te gustaría ver?'), h('p', null, 'Cuéntanos qué película, serie o anime quieres que agreguemos.')), h('a', { class: 'btn primary', href: '#/suggest' }, 'Sugerir'))));
 }, { layout: 'shell' });
 
+/* Pestañas de la Biblioteca (un solo botón en el menú: Favoritos, Historial y Géneros) */
+const libTabs = (active) => h('div', { class: 'chips lib-tabs', role: 'tablist' },
+  [['/favorites', 'Favoritos'], ['/history', 'Historial'], ['/genres', 'Géneros']].map(([p, l]) => h('a', { class: 'chip' + (p === active ? ' on' : ''), href: '#' + p, role: 'tab', 'aria-selected': String(p === active) }, l)));
+
 /* ------------------------------------------------- Catálogo, géneros, búsqueda */
-function catalog(ctx, { title, subtitle, type, genre, text, showTypeChips }) {
+function catalog(ctx, { title, subtitle, type, genre, text, showTypeChips, anime }) {
   const { box, alive } = ctx;
-  const st = { type, genre, sort: text ? 'popular' : 'recent', offset: 0, items: [], total: 0 };
+  const st = { type, genre, anime, sort: text ? 'popular' : 'recent', offset: 0, items: [], total: 0 };
   const chips = h('div', { class: 'chips' });
   const grid = h('div', { class: 'grid' });
   const more = h('button', { class: 'btn', style: 'margin:26px auto 0;display:flex' }, 'Cargar más');
@@ -429,6 +441,7 @@ function catalog(ctx, { title, subtitle, type, genre, text, showTypeChips }) {
     const p = new URLSearchParams({ sort: st.sort, limit: '30', offset: String(st.offset) });
     if (st.type) p.set('type', st.type);
     if (st.genre) p.set('genre', st.genre);
+    if (st.anime) p.set('anime', st.anime);
     if (text) p.set('q', text);
     const d = await get('/api/titles?' + p);
     if (!alive()) return;
@@ -449,9 +462,10 @@ function catalog(ctx, { title, subtitle, type, genre, text, showTypeChips }) {
   return load(false);
 }
 
-route('/movies', (ctx) => catalog(ctx, { title: 'Películas', subtitle: 'Cine gratuito de dominio público y licencias abiertas', type: 'movie' }), { layout: 'shell' });
-route('/series', (ctx) => catalog(ctx, { title: 'Series', subtitle: 'Series y miniseries disponibles', type: 'series' }), { layout: 'shell' });
-route('/genre/:slug', (ctx) => catalog(ctx, { title: genreName(ctx.params.slug), subtitle: 'Películas y series de este género', genre: ctx.params.slug }), { layout: 'shell' });
+route('/movies', (ctx) => catalog(ctx, { title: 'Películas', subtitle: 'Cine gratuito de dominio público y licencias abiertas', type: 'movie', anime: '0' }), { layout: 'shell' });
+route('/series', (ctx) => catalog(ctx, { title: 'Series', subtitle: 'Series y miniseries disponibles', type: 'series', anime: '0' }), { layout: 'shell' });
+route('/anime', (ctx) => catalog(ctx, { title: 'Anime', subtitle: 'Series y películas de anime', anime: '1', showTypeChips: true }), { layout: 'shell' });
+route('/genre/:slug', (ctx) => catalog(ctx, { title: genreName(ctx.params.slug), subtitle: 'Películas, series y anime de este género', genre: ctx.params.slug }), { layout: 'shell' });
 route('/search', (ctx) => {
   const text = (ctx.query.q || '').trim();
   if (shell && shell.search.value !== text) shell.search.value = text;
@@ -464,7 +478,7 @@ route('/genres', ({ box, alive }) => {
     if (!alive()) return;
     GENRES = genres;
     clear(box);
-    box.append(h('div', { class: 'page' }, h('h1', null, 'Géneros'), h('p', { class: 'sub' }, 'Explora el catálogo por categoría'),
+    box.append(h('div', { class: 'page' }, h('h1', null, 'Géneros'), h('p', { class: 'sub' }, 'Explora el catálogo por categoría'), libTabs('/genres'),
       h('div', { class: 'genre-tiles' }, genres.map((g, i) => h('a', { class: 'genre-tile', href: '#/genre/' + g.slug, style: `--c:hsl(${(i * 41 + 350) % 360} 55% 24%)` },
         icon('film'), h('b', null, g.name), h('span', null, `${g.count} ${g.count === 1 ? 'título' : 'títulos'}`))))));
   });
@@ -575,7 +589,7 @@ route('/favorites', async ({ box, alive }) => {
   if (!alive()) return;
   const grid = h('div', { class: 'grid' });
   const empty = () => h('div', { class: 'empty' }, icon('heart'), h('p', null, 'Aún no tienes favoritos. Pulsa el corazón en cualquier título para guardarlo aquí.'), h('a', { class: 'btn primary', href: '#/home' }, 'Explorar catálogo'));
-  const wrap = h('div', { class: 'page' }, h('h1', null, 'Favoritos'), h('p', { class: 'sub' }, `Perfil de ${S.profile.name}`), grid);
+  const wrap = h('div', { class: 'page' }, h('h1', null, 'Favoritos'), h('p', { class: 'sub' }, `Perfil de ${S.profile.name}`), libTabs('/favorites'), grid);
   d.items.forEach((t) => {
     const c = posterCard(t, { onToggle: (on) => { if (!on) { c.remove(); if (!grid.children.length) wrap.append(empty()); } } });
     grid.append(c);
@@ -610,12 +624,68 @@ route('/history', async ({ box, alive }) => {
         } }, icon('trash'))));
     list.append(row);
   });
-  wrap.append(h('div', { class: 'toolbar' }, h('div', null, h('h1', null, 'Historial'), h('p', { class: 'sub' }, `Perfil de ${S.profile.name}`)), clearBtn), list);
+  wrap.append(libTabs('/history'), h('div', { class: 'toolbar' }, h('div', null, h('h1', null, 'Historial'), h('p', { class: 'sub' }, `Perfil de ${S.profile.name}`)), clearBtn), list);
   if (!d.items.length) drawEmpty();
   clear(box); box.append(wrap);
 }, { layout: 'shell' });
 
+/* ------------------------------------------------------------- Sugerencias */
+route('/suggest', ({ box }) => {
+  const f = formHelper();
+  const kind = h('select', { id: 'sg-kind' }, [['movie', 'Película'], ['series', 'Serie'], ['anime', 'Anime'], ['comment', 'Comentario general']].map(([v, l]) => h('option', { value: v }, l)));
+  const title = h('input', { id: 'sg-title', maxlength: '120', placeholder: 'Ej.: nombre de la película, serie o anime' });
+  const note = h('textarea', { id: 'sg-note', maxlength: '600', rows: '5', placeholder: 'Cuéntanos más: año, dónde la viste, por qué la quieres aquí…' });
+  const titleField = field('¿Cuál quieres que agreguemos?', title);
+  const btn = h('button', { class: 'btn primary', type: 'submit' }, icon('chat'), 'Enviar');
+  const done = h('div');
+  const sync = () => { const c = kind.value === 'comment'; titleField.hidden = c; note.placeholder = c ? 'Escribe tu comentario…' : 'Cuéntanos más: año, dónde la viste, por qué la quieres aquí…'; };
+  kind.onchange = sync;
+  const form = h('form', { onsubmit: (e) => {
+    e.preventDefault();
+    f.run(btn, async () => {
+      await post('/api/suggestions', { kind: kind.value, title: title.value, note: note.value });
+      title.value = note.value = '';
+      clear(done); done.append(h('div', { class: 'notice' }, '¡Gracias! Recibimos tu mensaje y lo revisaremos.'));
+      toast('Sugerencia enviada', 'ok');
+    });
+  } }, f.err, done, field('¿Qué quieres enviarnos?', kind), titleField, field('Mensaje', note), btn);
+  clear(box);
+  box.append(h('div', { class: 'page narrow' }, h('h1', null, 'Sugerencias y comentarios'),
+    h('p', { class: 'sub' }, 'Dinos qué película, serie o anime quieres que agreguemos, o déjanos tu opinión sobre la app.'), form));
+  sync();
+}, { layout: 'shell' });
+
+/* -------------------------------------------------- Privacidad y términos */
+const legalPage = (tab) => ({ box }) => {
+  clear(box);
+  const back = () => { if (history.length > 1) history.back(); else go(S.user ? '/home' : '/welcome'); };
+  box.append(h('div', { class: 'legal-page' },
+    h('div', { class: 'legal-head' }, h('button', { class: 'icon-btn', 'aria-label': 'Volver', onclick: back }, icon('arrowL')), logo()),
+    h('h1', null, tab === 'terms' ? 'Términos y condiciones' : 'Política de privacidad'),
+    h('div', { class: 'chips', role: 'tablist' },
+      h('a', { class: 'chip' + (tab === 'privacy' ? ' on' : ''), href: '#/privacy', role: 'tab' }, 'Privacidad'),
+      h('a', { class: 'chip' + (tab === 'terms' ? ' on' : ''), href: '#/terms', role: 'tab' }, 'Términos y condiciones')),
+    tab === 'terms' ? termsDoc() : privacyDoc()));
+};
+route('/privacy', legalPage('privacy'), { public: true, always: true, layout: 'bare' });
+route('/terms', legalPage('terms'), { public: true, always: true, layout: 'bare' });
+
 /* --------------------------------------------------------------- Mi perfil */
+function deleteAccount() {
+  modal((box, close) => {
+    const f = formHelper();
+    const pw = h('input', { id: 'del-pw', type: 'password', required: true, autocomplete: 'current-password' });
+    const ok = h('button', { class: 'btn danger', type: 'submit' }, 'Eliminar para siempre');
+    box.append(h('h3', null, 'Eliminar mi cuenta'),
+      h('p', { class: 'muted' }, 'Escribe tu contraseña para confirmar. Se borrarán tu cuenta, perfiles, favoritos e historial.'),
+      h('form', { onsubmit: (e) => { e.preventDefault(); f.run(ok, async () => {
+        await detachPush();
+        await post('/api/auth/delete-account', { password: pw.value });
+        close(); clearSession(); shell = null; toast('Tu cuenta fue eliminada', 'ok'); go('/welcome');
+      }); } }, f.err, field('Contraseña', pw), h('div', { class: 'foot' }, h('button', { type: 'button', class: 'btn', onclick: close }, 'Cancelar'), ok)));
+  });
+}
+
 route('/profile', ({ box }) => {
   const wrap = h('div', { class: 'page' }, h('h1', null, 'Mi perfil'), h('p', { class: 'sub' }, 'Gestiona tu cuenta y los perfiles de quienes ven contigo'));
   // Cuenta
@@ -658,7 +728,7 @@ route('/profile', ({ box }) => {
     clear(nbox);
     const st = await pushState();
     if (st === 'unsupported') return nbox.append(h('p', { class: 'muted' }, 'Este dispositivo o navegador no admite notificaciones.'));
-    if (st === 'denied') return nbox.append(h('p', { class: 'muted' }, 'Las notificaciones están bloqueadas. Actívalas en los ajustes del teléfono: Aplicaciones > CINEPLUS > Notificaciones (o en los permisos del sitio en tu navegador).'));
+    if (st === 'denied') return nbox.append(h('p', { class: 'muted' }, 'Las notificaciones están bloqueadas. Actívalas en los ajustes del teléfono: Aplicaciones > FLIXOR > Notificaciones (o en los permisos del sitio en tu navegador).'));
     const btn = h('button', { class: 'btn' + (st === 'on' ? '' : ' primary'), onclick: async () => {
       btn.disabled = true;
       try { if (st === 'on') { await disablePush(); toast('Notificaciones desactivadas en este dispositivo', 'ok'); } else { await enablePush(); toast('Notificaciones activadas', 'ok'); } } catch (e) { toast(e.message, 'err'); }
@@ -671,6 +741,14 @@ route('/profile', ({ box }) => {
     h('div', { class: 'two-col' }, h('div', { class: 'panel' }, h('h3', null, 'Cuenta'), acc), h('div', { class: 'panel' }, h('h3', null, 'Seguridad'), pw)),
     h('div', { class: 'panel' }, h('h3', null, 'Perfiles'), plist),
     h('div', { class: 'panel' }, h('h3', null, 'Notificaciones'), nbox),
+    h('div', { class: 'panel' }, h('h3', null, 'Ayuda y privacidad'),
+      h('div', { class: 'row-flex', style: 'flex-wrap:wrap;gap:10px' },
+        h('a', { class: 'btn', href: '#/suggest' }, icon('chat'), 'Sugerencias y comentarios'),
+        h('a', { class: 'btn', href: '#/privacy' }, icon('shield'), 'Privacidad'),
+        h('a', { class: 'btn', href: '#/terms' }, icon('info'), 'Términos y condiciones'))),
+    h('div', { class: 'panel' }, h('h3', null, 'Eliminar mi cuenta'),
+      h('p', { class: 'muted', style: 'margin-bottom:12px' }, 'Se borrarán tu cuenta, perfiles, favoritos e historial. No se puede deshacer.'),
+      h('button', { class: 'btn danger', onclick: () => deleteAccount() }, icon('trash'), 'Eliminar mi cuenta')),
     h('div', { class: 'row-flex' },
       h('a', { class: 'btn', href: '#/profiles' }, icon('swap'), 'Cambiar de perfil'),
       S.user.role === 'admin' ? h('a', { class: 'btn', href: '#/admin' }, icon('shield'), 'Panel de administración') : null,
@@ -700,7 +778,7 @@ async function fetchMe(onWaiting) {
 }
 
 async function boot() {
-  const splash = h('div', { class: 'splash', 'aria-label': 'Cargando CINEPLUS', role: 'img' }, h('div', { class: 'splash-play' }, icon('play', true)));
+  const splash = h('div', { class: 'splash', 'aria-label': 'Cargando FLIXOR', role: 'img' }, h('div', { class: 'splash-play' }, icon('play', true)));
   document.body.append(splash);
   const minWait = new Promise((r) => setTimeout(r, 1500));
   // Si el servidor tarda en responder, se muestra "Conectando…" bajo la flecha.

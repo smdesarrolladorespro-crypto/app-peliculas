@@ -2,14 +2,14 @@
 const { q } = require('./db');
 
 const CARD_COLS = `t.id, t.type, t.title, t.overview, t.year, t.rating, t.runtime, t.poster_url, t.backdrop_url,
-  t.featured, t.views, t.created_at,
+  t.featured, t.anime, t.views, t.created_at,
   (SELECT group_concat(g.slug) FROM title_genres tg JOIN genres g ON g.id = tg.genre_id WHERE tg.title_id = t.id) AS genre_slugs,
   CASE WHEN t.type = 'movie' THEN (t.video_url IS NOT NULL)
        ELSE EXISTS (SELECT 1 FROM episodes e WHERE e.title_id = t.id AND e.video_url IS NOT NULL) END AS playable`;
 
 function shape(r) {
   const { genre_slugs, ...rest } = r;
-  return { ...rest, featured: !!r.featured, playable: !!r.playable, genres: genre_slugs ? genre_slugs.split(',') : [] };
+  return { ...rest, featured: !!r.featured, anime: !!r.anime, playable: !!r.playable, genres: genre_slugs ? genre_slugs.split(',') : [] };
 }
 
 const ORDERS = {
@@ -20,7 +20,7 @@ const ORDERS = {
   az: 't.title COLLATE NOCASE ASC',
 };
 
-function listTitles({ type, genre, text, sort = 'recent', limit = 40, offset = 0, featured, ids } = {}) {
+function listTitles({ type, genre, text, sort = 'recent', limit = 40, offset = 0, featured, ids, anime } = {}) {
   const where = [];
   const params = [];
   if (type === 'movie' || type === 'series') { where.push('t.type = ?'); params.push(type); }
@@ -31,6 +31,8 @@ function listTitles({ type, genre, text, sort = 'recent', limit = 40, offset = 0
     params.push(like, like);
   }
   if (featured) where.push('t.featured = 1');
+  if (anime === '1' || anime === true || anime === 1) where.push('t.anime = 1');
+  else if (anime === '0' || anime === false || anime === 0) where.push('t.anime = 0');
   if (ids) { where.push(`t.id IN (${ids.map(() => '?').join(',') || 'NULL'})`); params.push(...ids); }
   const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const total = q.get(`SELECT COUNT(*) AS n FROM titles t ${w}`, ...params).n;

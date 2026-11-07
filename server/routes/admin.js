@@ -53,6 +53,7 @@ module.exports = (app) => {
       series: n("SELECT COUNT(*) n FROM titles WHERE type='series'"),
       episodes: n('SELECT COUNT(*) n FROM episodes'),
       featured: n('SELECT COUNT(*) n FROM titles WHERE featured=1'),
+      anime: n('SELECT COUNT(*) n FROM titles WHERE anime=1'),
       plays: n('SELECT COALESCE(SUM(views),0) n FROM titles'),
       tmdb: tmdb.enabled(),
       allowedHosts: allowedHosts(),
@@ -96,6 +97,7 @@ module.exports = (app) => {
       video_url: src.url,
       subtitles: JSON.stringify(type === 'movie' ? validateSubtitles(b.subtitles) : []),
       featured: b.featured ? 1 : 0,
+      anime: b.anime ? 1 : 0,
       tmdb_id: num(b.tmdb_id, { min: 1, max: 1e9, label: 'TMDB ID', int: true }),
     };
   }
@@ -104,9 +106,9 @@ module.exports = (app) => {
     const t = readTitle(req.body);
     const id = tx(() => {
       const r = q.run(
-        `INSERT INTO titles (type, title, overview, year, rating, runtime, poster_url, backdrop_url, video_type, video_url, subtitles, featured, tmdb_id, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        t.type, t.title, t.overview, t.year, t.rating, t.runtime, t.poster_url, t.backdrop_url, t.video_type, t.video_url, t.subtitles, t.featured, t.tmdb_id, Date.now()
+        `INSERT INTO titles (type, title, overview, year, rating, runtime, poster_url, backdrop_url, video_type, video_url, subtitles, featured, anime, tmdb_id, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        t.type, t.title, t.overview, t.year, t.rating, t.runtime, t.poster_url, t.backdrop_url, t.video_type, t.video_url, t.subtitles, t.featured, t.anime, t.tmdb_id, Date.now()
       );
       setGenres(r.lastInsertRowid, req.body.genres);
       return Number(r.lastInsertRowid);
@@ -121,8 +123,8 @@ module.exports = (app) => {
     const t = readTitle(req.body, existing);
     tx(() => {
       q.run(
-        `UPDATE titles SET title=?, overview=?, year=?, rating=?, runtime=?, poster_url=?, backdrop_url=?, video_type=?, video_url=?, subtitles=?, featured=?, tmdb_id=? WHERE id=?`,
-        t.title, t.overview, t.year, t.rating, t.runtime, t.poster_url, t.backdrop_url, t.video_type, t.video_url, t.subtitles, t.featured, t.tmdb_id, id
+        `UPDATE titles SET title=?, overview=?, year=?, rating=?, runtime=?, poster_url=?, backdrop_url=?, video_type=?, video_url=?, subtitles=?, featured=?, anime=?, tmdb_id=? WHERE id=?`,
+        t.title, t.overview, t.year, t.rating, t.runtime, t.poster_url, t.backdrop_url, t.video_type, t.video_url, t.subtitles, t.featured, t.anime, t.tmdb_id, id
       );
       if (req.body.genres) setGenres(id, req.body.genres);
     });

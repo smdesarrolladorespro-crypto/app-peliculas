@@ -24,7 +24,7 @@ export async function pushState() {
 export async function enablePush() {
   if (!pushSupported()) throw new Error('Este dispositivo no admite notificaciones');
   const perm = await Notification.requestPermission();
-  if (perm !== 'granted') throw new Error('No diste permiso para las notificaciones. Puedes activarlo en los ajustes de Android > Aplicaciones > CINEPLUS > Notificaciones.');
+  if (perm !== 'granted') throw new Error('No diste permiso para las notificaciones. Puedes activarlo en los ajustes de Android > Aplicaciones > FLIXOR > Notificaciones.');
   const { reg, sub: existing } = await currentSub();
   const { key } = await get('/api/push/key');
   const sub = existing || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(key) });

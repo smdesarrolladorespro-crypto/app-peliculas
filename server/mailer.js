@@ -4,7 +4,7 @@
 //   BREVO_API_KEY   → Brevo (brevo.com), plan gratis de 300 correos/día. Permite usar tu propio
 //                     correo (p. ej. Gmail) como remitente verificado, sin comprar un dominio.
 //   RESEND_API_KEY  → Resend (resend.com). Para escribir a cualquier persona necesita un dominio propio.
-// MAIL_FROM = remitente, por ejemplo:  CINEPLUS <micorreo@gmail.com>
+// MAIL_FROM = remitente, por ejemplo:  FLIXOR <micorreo@gmail.com>
 // Sin ningún proveedor, el mensaje solo se imprime en la consola del servidor (modo desarrollo).
 
 function provider() {
@@ -16,8 +16,8 @@ function provider() {
 function parseFrom() {
   const raw = (process.env.MAIL_FROM || '').trim();
   const m = raw.match(/^(.*?)\s*<([^>]+)>$/);
-  if (m) return { name: m[1].replace(/^"|"$/g, '').trim() || 'CINEPLUS', email: m[2].trim() };
-  return { name: 'CINEPLUS', email: raw };
+  if (m) return { name: m[1].replace(/^"|"$/g, '').trim() || 'FLIXOR', email: m[2].trim() };
+  return { name: 'FLIXOR', email: raw };
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,7 +33,7 @@ async function sendMail({ to, subject, text, button }) {
   }
   const html = `<div style="background:#000;padding:24px;font-family:Arial,sans-serif;color:#e5e5e5">
 <div style="max-width:480px;margin:auto;background:#141414;border-radius:12px;padding:28px">
-<div style="font-size:22px;font-weight:bold;letter-spacing:2px;color:#fff;margin-bottom:18px"><span style="color:#e50914">&#9654;</span> CINE<span style="color:#e50914">PLUS</span></div>
+<div style="font-size:22px;font-weight:bold;letter-spacing:2px;color:#fff;margin-bottom:18px"><span style="color:#e50914">&#9654;</span> FLIX<span style="color:#e50914">OR</span></div>
 ${text.split('\n\n').map((para) => `<p style="line-height:1.5;margin:0 0 14px">${esc(para).replace(/\n/g, '<br>')}</p>`).join('')}
 ${button ? `<p style="margin:22px 0"><a href="${esc(button.url)}" style="background:#e50914;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;display:inline-block">${esc(button.label)}</a></p>` : ''}
 </div></div>`;

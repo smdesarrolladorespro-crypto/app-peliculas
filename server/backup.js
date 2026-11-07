@@ -64,6 +64,10 @@ async function putObject(key, buf) {
   const r = await s3('PUT', key, { body: buf });
   if (!r.ok) throw new Error(`S3 PUT ${key}: ${r.status} ${(await r.text()).slice(0, 200)}`);
 }
+async function deleteObject(key) {
+  const r = await s3('DELETE', key);
+  if (!r.ok && r.status !== 404) throw new Error(`S3 DELETE ${key}: ${r.status}`);
+}
 async function getObject(key) {
   const r = await s3('GET', key);
   if (r.status === 404) return null;
@@ -140,7 +144,15 @@ async function run({ db, uploadDir, dataDir } = {}) {
     fs.rmSync(snap, { force: true });
     await putObject('cineplus.db', buf);
     const day = new Date().toISOString().slice(0, 10);
-    if (!uploaded.has('daily:' + day)) { await putObject(`daily/cineplus-${day}.db`, buf); uploaded.add('daily:' + day); }
+    if (!uploaded.has('daily:' + day)) {
+      await putObject(`daily/cineplus-${day}.db`, buf);
+      uploaded.add('daily:' + day);
+      // Las copias diarias se conservan 30 días (así lo indica la política de privacidad).
+      for (const k of await listKeys('daily/')) {
+        const m = k.match(/cineplus-(\d{4}-\d{2}-\d{2})\.db$/);
+        if (m && Date.now() - Date.parse(m[1]) > 30 * 86_400_000) await deleteObject(k).catch(() => {});
+      }
+    }
     for (const name of fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir) : []) {
       if (!safeName(name)) continue;
       const st = fs.statSync(path.join(uploadDir, name));

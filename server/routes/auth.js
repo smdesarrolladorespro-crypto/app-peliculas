@@ -32,6 +32,7 @@ function userPayload(u) {
 module.exports = (app) => {
   const limiter = rateLimit({ name: 'auth', max: 30, windowMs: 15 * 60_000 });
   const resetLimiter = rateLimit({ name: 'reset', max: 8, windowMs: 15 * 60_000 });
+  const deleteLimiter = rateLimit({ name: 'delete', max: 6, windowMs: 15 * 60_000 });
 
   app.post('/api/auth/register', limiter, async (req, res) => {
     const name = cleanName(req.body.name);
@@ -81,7 +82,7 @@ module.exports = (app) => {
       q.run('INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?,?,?)', user.id, sha256(token), Date.now() + 30 * 60_000);
       const link = `${APP_URL}/#/reset/${token}`;
       // Sin await: el tiempo de respuesta no debe revelar si el correo existe (sendMail nunca lanza).
-      sendMail({ to: user.email, subject: 'Restablece tu contraseña de CINEPLUS', text: `Hola ${user.name},\n\nRecibimos una solicitud para crear una nueva contraseña. El enlace es válido por 30 minutos y solo se puede usar una vez:\n${link}\n\nSi no lo solicitaste, ignora este mensaje: tu contraseña no cambiará.`, button: { label: 'Crear nueva contraseña', url: link } });
+      sendMail({ to: user.email, subject: 'Restablece tu contraseña de FLIXOR', text: `Hola ${user.name},\n\nRecibimos una solicitud para crear una nueva contraseña. El enlace es válido por 30 minutos y solo se puede usar una vez:\n${link}\n\nSi no lo solicitaste, ignora este mensaje: tu contraseña no cambiará.`, button: { label: 'Crear nueva contraseña', url: link } });
       // Solo en desarrollo (sin servicio de correo) se devuelve el enlace para poder probar el flujo.
       if (SHOW_RESET_LINK) out.devLink = `/#/reset/${token}`;
     }
@@ -97,6 +98,22 @@ module.exports = (app) => {
       q.run('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', hash, row.user_id);
       q.run('UPDATE password_resets SET used = 1 WHERE id = ?', row.id);
     });
+    res.json({ ok: true });
+  });
+
+  // Eliminar la propia cuenta (requiere la contraseña). Borra perfiles, favoritos, historial y avisos.
+  app.post('/api/auth/delete-account', auth, deleteLimiter, async (req, res) => {
+    const u = q.get('SELECT * FROM users WHERE id = ?', req.user.id);
+    if (!(await verifyPassword(String(req.body.password || ''), u.password_hash))) throw new HttpError(400, 'La contraseña es incorrecta');
+    if (u.role === 'admin' && q.get("SELECT COUNT(*) n FROM users WHERE role = 'admin' AND status = 'active'").n <= 1) {
+      throw new HttpError(400, 'Eres el único administrador: antes de eliminar tu cuenta nombra a otro administrador.');
+    }
+    tx(() => {
+      q.run("UPDATE suggestions SET user_id = NULL, user_name = '' WHERE user_id = ?", u.id);
+      q.run('DELETE FROM password_resets WHERE user_id = ?', u.id);
+      q.run('DELETE FROM users WHERE id = ?', u.id);
+    });
+    endSession(res);
     res.json({ ok: true });
   });
 

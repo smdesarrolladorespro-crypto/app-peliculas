@@ -1,6 +1,6 @@
 {
-  "name": "CINEPLUS",
-  "short_name": "CINEPLUS",
+  "name": "FLIXOR",
+  "short_name": "FLIXOR",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",
@@ -29,7 +29,7 @@
   "id": "/",
   "scope": "/",
   "lang": "es",
-  "description": "Películas y series gratuitas de fuentes legales.",
+  "description": "Películas, series y anime gratis.",
   "categories": [
     "entertainment"
   ]

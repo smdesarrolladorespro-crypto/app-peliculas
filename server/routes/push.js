@@ -63,7 +63,7 @@ module.exports = (app) => {
 
   app.post('/api/admin/mail/test', ...guard, async (req, res) => {
     if (!mailStatus().provider) throw new HttpError(400, 'No hay proveedor de correo configurado (BREVO_API_KEY o RESEND_API_KEY)');
-    const ok = await sendMail({ to: req.user.email, subject: 'Prueba de correo de CINEPLUS', text: 'Si lees este mensaje, el envío de correo de CINEPLUS funciona correctamente.' });
+    const ok = await sendMail({ to: req.user.email, subject: 'Prueba de correo de FLIXOR', text: 'Si lees este mensaje, el envío de correo de FLIXOR funciona correctamente.' });
     if (!ok) throw new HttpError(502, 'El proveedor rechazó el envío. Revisa la clave, el remitente (MAIL_FROM) y los logs del servidor.');
     res.json({ ok: true, to: req.user.email });
   });

@@ -6,7 +6,7 @@ services:
     name: cineplus
     runtime: node
     plan: starter
-    buildCommand: echo "CINEPLUS no tiene dependencias que instalar"
+    buildCommand: echo "FLIXOR no tiene dependencias que instalar"
     startCommand: npm start
     healthCheckPath: /api/health
     disk:

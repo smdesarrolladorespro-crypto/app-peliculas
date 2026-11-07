@@ -54,6 +54,9 @@ const ICONS = {
   logout: 'M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4M16 8l4 4-4 4M20 12H9',
   shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
   swap: 'M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7',
+  spark: 'M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2zM19 3v4M17 5h4',
+  bookmark: 'M6 3h12v18l-6-4-6 4z',
+  chat: 'M4 5h16v11H9l-5 4z',
   bell: 'M6 8a6 6 0 1112 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 004 0',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   edit: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
@@ -77,7 +80,7 @@ export function icon(name, filled = false) {
 }
 
 export function logo(big = false) {
-  return h('span', { class: 'logo' + (big ? ' big' : '') }, icon('play', true), h('span', null, 'CINE', h('b', null, 'PLUS')));
+  return h('span', { class: 'logo' + (big ? ' big' : '') }, icon('play', true), h('span', null, 'FLIX', h('b', null, 'OR')));
 }
 
 export function toast(msg, kind = '') {

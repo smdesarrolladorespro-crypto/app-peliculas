@@ -314,7 +314,7 @@ const collect = (req) => new Promise((r) => { const ch = []; req.on('data', (c) 
 
 test('correo: la recuperación de contraseña se envía por la API del proveedor', async () => {
   process.env.BREVO_API_KEY = 'clave-de-prueba';
-  process.env.MAIL_FROM = 'CINEPLUS <cine@example.com>';
+  process.env.MAIL_FROM = 'FLIXOR <cine@example.com>';
   const calls = [];
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts) => {
@@ -417,6 +417,7 @@ test('copias de seguridad: se suben, se restauran en un servidor nuevo y un fall
     const key = decodeURIComponent(url.pathname.split('/').slice(2).join('/'));
     if (/^AWS4-HMAC-SHA256 Credential=KEY\//.test(req.headers.authorization || '')) signed++;
     if (req.method === 'PUT') { store.set(key, await collect(req)); return res.end(); }
+    if (req.method === 'DELETE') { store.delete(key); return res.end(); }
     if (failGets) { res.statusCode = 500; return res.end('boom'); }
     if (!key) {
       const prefix = url.searchParams.get('prefix') || '';
@@ -431,7 +432,9 @@ test('copias de seguridad: se suben, se restauran en un servidor nuevo y un fall
     const backup = require('../server/backup');
     const { UPLOAD_DIR } = require('../server/config');
     fs.writeFileSync(path.join(UPLOAD_DIR, 'portada.png'), Buffer.from('imagen-falsa'));
+    store.set('daily/cineplus-2020-01-01.db', Buffer.from('vieja'));
     await backup.backupNow();
+    assert.equal(store.has('daily/cineplus-2020-01-01.db'), false, 'las copias de más de 30 días se eliminan');
     assert.ok(store.has('cineplus.db') && store.has('uploads/portada.png'));
     assert.ok([...store.keys()].some((k) => k.startsWith('daily/')));
     assert.ok(signed >= 3, 'las peticiones van firmadas');
@@ -471,6 +474,80 @@ test('la firma AWS SigV4 coincide con el ejemplo oficial de AWS', () => {
     region: 'us-east-1', keyId: 'AKIAIOSFODNN7EXAMPLE', secret: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
   });
   assert.equal(r.signature, 'f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41');
+});
+
+test('anime: se marca en el panel, tiene su sección y no se mezcla con Películas ni Series', async () => {
+  const a = client();
+  await a.call('POST', '/api/auth/login', { email: 'admin@cineplus.local', password: 'Admin12345' });
+  const mk = async (title, type, anime) => (await a.call('POST', '/api/admin/titles', { type, title, overview: 'x', anime, genres: [] })).data.title;
+  const an1 = await mk('Anime de prueba', 'series', true);
+  const mv = await mk('Pelicula normal de prueba', 'movie', false);
+  assert.equal(an1.anime, true);
+  assert.equal(mv.anime, false);
+  const only = (await a.call('GET', '/api/titles?anime=1&limit=100')).data.items.map((t) => t.title);
+  assert.ok(only.includes('Anime de prueba') && !only.includes('Pelicula normal de prueba'));
+  const noAnime = (await a.call('GET', '/api/titles?type=series&anime=0&limit=100')).data.items.map((t) => t.title);
+  assert.ok(!noAnime.includes('Anime de prueba'));
+  const home = (await a.call('GET', '/api/home')).data;
+  assert.ok(home.anime.some((t) => t.title === 'Anime de prueba'));
+  assert.ok(!home.series.some((t) => t.title === 'Anime de prueba'));
+  // se puede quitar la marca
+  const edited = await a.call('PUT', `/api/admin/titles/${an1.id}`, { type: 'series', title: 'Anime de prueba', overview: 'x', anime: false, genres: [] });
+  assert.equal(edited.data.title.anime, false);
+  assert.ok((await a.call('GET', '/api/admin/stats')).data.anime >= 0);
+});
+
+test('sugerencias: se validan, se guardan, se envían al correo del equipo y el admin las gestiona', async () => {
+  process.env.BREVO_API_KEY = 'k'; process.env.MAIL_FROM = 'FLIXOR <cine@example.com>';
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).startsWith('https://api.brevo.com')) { calls.push(JSON.parse(opts.body)); return new Response('{}', { status: 201 }); }
+    return realFetch(url, opts);
+  };
+  try {
+    const u = client();
+    assert.equal((await u.call('POST', '/api/suggestions', { kind: 'anime', title: 'X' })).status, 401, 'requiere sesión');
+    assert.equal((await u.call('POST', '/api/auth/register', { name: 'Fan', email: 'fan@example.com', password: 'Clave12345' })).status, 201);
+    assert.equal((await u.call('POST', '/api/suggestions', { kind: 'otro', title: 'X' })).status, 400);
+    assert.equal((await u.call('POST', '/api/suggestions', { kind: 'anime', title: '' })).status, 400);
+    assert.equal((await u.call('POST', '/api/suggestions', { kind: 'comment', note: '' })).status, 400);
+    assert.equal((await u.call('POST', '/api/suggestions', { kind: 'anime', title: 'Cowboy Bebop', note: 'Por favor' })).status, 200);
+    for (let i = 0; i < 20 && !calls.length; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].to[0].email, 'sm.desarrolladores.pro@gmail.com');
+    assert.match(calls[0].subject, /Anime — Cowboy Bebop/);
+    assert.match(calls[0].textContent, /Enviado por: Fan/);
+    assert.equal((await u.call('GET', '/api/admin/suggestions')).status, 403);
+    const a = client();
+    await a.call('POST', '/api/auth/login', { email: 'admin@cineplus.local', password: 'Admin12345' });
+    const list = (await a.call('GET', '/api/admin/suggestions')).data.items;
+    const it = list.find((x) => x.title === 'Cowboy Bebop');
+    assert.ok(it && it.kind === 'anime' && it.done === false);
+    assert.equal((await a.call('PATCH', `/api/admin/suggestions/${it.id}`, { done: true })).status, 200);
+    assert.equal((await a.call('DELETE', `/api/admin/suggestions/${it.id}`)).status, 200);
+    assert.ok(!(await a.call('GET', '/api/admin/suggestions')).data.items.some((x) => x.id === it.id));
+  } finally {
+    globalThis.fetch = realFetch; delete process.env.BREVO_API_KEY; delete process.env.MAIL_FROM;
+  }
+});
+
+test('eliminar cuenta: pide la contraseña, borra los datos y el único administrador no puede', async () => {
+  const { q } = require('../server/db');
+  const u = client();
+  assert.equal((await u.call('POST', '/api/auth/register', { name: 'Adios', email: 'adios@example.com', password: 'Clave12345' })).status, 201);
+  const me = (await u.call('GET', '/api/auth/me')).data;
+  const uid = me.user.id;
+  assert.ok(q.get('SELECT COUNT(*) n FROM profiles WHERE user_id = ?', uid).n >= 1);
+  assert.equal((await u.call('POST', '/api/auth/delete-account', { password: 'incorrecta1' })).status, 400);
+  assert.equal((await u.call('POST', '/api/auth/delete-account', { password: 'Clave12345' })).status, 200);
+  assert.equal(q.get('SELECT COUNT(*) n FROM users WHERE id = ?', uid).n, 0);
+  assert.equal(q.get('SELECT COUNT(*) n FROM profiles WHERE user_id = ?', uid).n, 0);
+  assert.equal((await u.call('GET', '/api/auth/me')).status, 401, 'la sesión queda cerrada');
+  assert.equal((await client().call('POST', '/api/auth/login', { email: 'adios@example.com', password: 'Clave12345' })).status, 401);
+  const a = client();
+  await a.call('POST', '/api/auth/login', { email: 'admin@cineplus.local', password: 'Admin12345' });
+  assert.equal((await a.call('POST', '/api/auth/delete-account', { password: 'Admin12345' })).status, 400, 'único administrador');
 });
 
 test('el catálogo inicial se carga una sola vez: lo que el administrador borra no reaparece', async () => {
