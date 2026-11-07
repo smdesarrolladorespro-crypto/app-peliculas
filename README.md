@@ -32,10 +32,10 @@ server/
   index.js          arranque, cabeceras de seguridad (CSP, etc.) y montaje de rutas
   config.js         .env, rutas de datos, secreto JWT
   db.js             esquema SQLite (users, profiles, titles, genres, episodes, favorites, history…)
-  sources.js        ★ fuentes de video autorizadas (lista blanca de dominios y tipos)
+  sources.js        ★ fuentes de video HTTPS públicas con bloqueos explícitos
   tmdb.js           cliente TMDB opcional (solo metadatos)
   archive.js        importador de Internet Archive (búsqueda y archivos MP4)
-  scrape.js         importador de páginas/feeds de fuentes autorizadas (robots.txt, SSRF, JSON-LD/OG/RSS/sitemap)
+  scrape.js         importador de páginas/feeds públicos (robots.txt, SSRF, JSON-LD/OG/RSS/sitemap)
   mailer.js         punto de extensión para enviar correo
   seed.js           géneros, administrador y catálogo inicial
   middleware.js     auth (cookie JWT), rol admin, perfil activo
@@ -66,27 +66,25 @@ test/smoke.js
 ## Fuentes legales y cómo añadir nuevas
 
 FLIXOR **no aloja ni enlaza contenido protegido**. Cada título/episodio guarda un tipo y una URL de
-una fuente autorizada, y el servidor (`server/sources.js`) solo acepta:
+una fuente HTTPS pública. No es necesario registrar cada dominio en la pestaña Fuentes: se aceptan dominios
+públicos de forma predeterminada, y el administrador puede bloquear dominios concretos desde el panel.
 
-- URLs **HTTPS** de dominios de la lista blanca (por defecto: `archive.org`, `download.blender.org`,
-  `storage.googleapis.com`, YouTube, Vimeo, Dailymotion) o archivos propios en `data/uploads/`.
+- URLs **HTTPS** de dominios públicos (excepto los bloqueados expresamente) o archivos propios en `data/uploads/`.
 - Tipos: `mp4` (archivo directo), `hls` (.m3u8), `youtube`, `embed` (iframe).
+- La pestaña **Fuentes** conserva la gestión de bloqueos y los dominios históricos; `ALLOWED_SOURCE_HOSTS`
+  se mantiene por compatibilidad, pero ya no funciona como lista obligatoria de permitidos.
 
-Para autorizar **un sitio nuevo** no hace falta tocar archivos: en el panel, pestaña **Fuentes**, escribe el sitio
-y confirma que tienes derecho a usar su contenido. También puedes pegar el enlace en una película o episodio:
-si su sitio no está autorizado, la app pregunta “¿Autorizar y guardar?”. Desde la misma pestaña puedes desactivar
-cualquier sitio (también los de por defecto) y quitar los que agregaste; si desactivas un sitio, los títulos que lo
-usan dejan de reproducirse. Si un tipo de fuente necesita otro reproductor, agrega un adaptador en
-`public/js/player.js` y el tipo en `TYPES` de `server/sources.js`. `ALLOWED_SOURCE_HOSTS` (.env) sigue disponible como
-complemento opcional.
+El importador sigue respetando `robots.txt`, no evade inicios de sesión ni protecciones y bloquea
+direcciones privadas/internas para evitar SSRF. Los enlaces deben ser HTTPS. Si un tipo de fuente necesita
+otro reproductor, agrega un adaptador en `public/js/player.js` y el tipo en `TYPES` de `server/sources.js`.
 
 Eres responsable de contar con los derechos o licencias de todo lo que publiques. Los datos de TMDB
 (pósteres, sinopsis, calificaciones) **no otorgan derechos de reproducción**.
 
 **Importar desde una página o feed (“Importar de una página”, en Contenido)**: pegas la URL de una página, un feed RSS/Atom
-o un sitemap de videos de una fuente *autorizada* y FLIXOR lista los videos que encuentra (JSON-LD, Open Graph, `<video>`,
+o un sitemap de videos de una página pública y FLIXOR lista los videos que encuentra (JSON-LD, Open Graph, `<video>`,
 iframes de YouTube/Vimeo, enclosures). Eliges cuáles importar como películas o como episodios de una serie. Salvaguardas:
-solo HTTPS, solo dominios de la lista de Fuentes (si no está, ofrece autorizarlo), respeta robots.txt, no evade protecciones,
+solo HTTPS de dominios públicos (excepto bloqueos explícitos), respeta robots.txt, no evade protecciones,
 bloquea direcciones internas (SSRF), límite de tamaño/tiempo/redirecciones y 40 análisis cada 10 min. La legalidad del
 contenido es responsabilidad de quien administra; la herramienta no puede verificarla.
 

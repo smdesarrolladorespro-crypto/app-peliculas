@@ -17,7 +17,7 @@ function build() {
       "img-src 'self' data: https:",
       "media-src 'self' https: blob:",
       "connect-src 'self' https:",
-      `frame-src ${[...new Set([...FRAME_BASE, ...allowedHosts().flatMap((h) => [`https://${h}`, `https://*.${h}`])])].join(' ')}`,
+      `frame-src ${[...new Set([...FRAME_BASE, 'https:'])].join(' ')}`,
       "style-src 'self' 'unsafe-inline'",
       "script-src 'self'",
       "object-src 'none'",

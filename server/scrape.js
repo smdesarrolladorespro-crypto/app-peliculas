@@ -1,13 +1,13 @@
 'use strict';
-// Importador desde una página o feed de una fuente AUTORIZADA.
+// Importador desde una página o feed público.
 //
 // Lee de una página los datos que el propio sitio publica en formatos estándar para que otros los usen
 // (JSON-LD de schema.org, etiquetas Open Graph, <video>/<source>, RSS/Atom y sitemaps de video) y propone
 // una lista de títulos para que el administrador elija cuáles importar. Reglas de seguridad:
-//   · Solo dominios que el administrador ya autorizó en la pestaña Fuentes (HTTPS).
+//   · Acepta cualquier dominio público HTTPS, salvo los bloqueados expresamente por administración.
 //   · Respeta robots.txt del sitio, se identifica como FLIXOR-Importer y va despacio.
 //   · No evade protecciones: no descifra reproductores, no usa navegador oculto ni salta bloqueos.
-//   · Solo propone videos cuyo dominio también esté autorizado (los demás se informan, no se importan).
+//   · Puede proponer videos alojados en dominios externos, siempre que sean URLs HTTPS públicas.
 //   · No se conecta a direcciones internas (protección SSRF), limita tamaño, tiempo y redirecciones.
 // La lista de dominios es un resguardo técnico, no una verificación legal: la responsabilidad de usar
 // únicamente contenido libre o con permiso es de quien administra la plataforma.
@@ -70,7 +70,7 @@ function assertAllowed(urlStr) {
   if (u.protocol !== 'https:') throw new HttpError(400, 'La dirección debe usar HTTPS');
   if (!isUrlAllowed(u.toString())) {
     const host = u.hostname.replace(/^www\./, '');
-    throw new HttpError(400, `El dominio ${host} no está en la lista de fuentes autorizadas. Agrégalo primero en la pestaña Fuentes.`, { code: 'host_not_allowed', host });
+    throw new HttpError(403, `El dominio ${host} está bloqueado o la URL no es válida.`, { code: 'host_blocked', host });
   }
   return u;
 }
@@ -324,7 +324,7 @@ async function analyze(urlStr) { return finish(await analyzeUrl(urlStr)); }
 
 // Analiza varias páginas enlazadas (una por una y con pausa, para no cargar el sitio).
 async function expand(urls) {
-  const list = [...new Set((Array.isArray(urls) ? urls : []).map(String))].slice(0, 15);
+  const list = [...new Set((Array.isArray(urls) ? urls : []).map(String))].slice(0, 50);
   if (!list.length) throw new HttpError(400, 'Elige al menos una página');
   const all = []; const errors = []; const seen = new Set();
   for (let i = 0; i < list.length; i++) {

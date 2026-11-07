@@ -155,12 +155,11 @@ test('recuperar contraseña: token de un solo uso', async () => {
   assert.equal((await c.call('POST', '/api/auth/login', { email: 'ana@example.com', password: 'NuevaClave789' })).status, 200);
 });
 
-test('administración: fuentes autorizadas, destacados, episodios y usuarios', async () => {
+test('administración: fuentes HTTPS públicas, destacados, episodios y usuarios', async () => {
   const a = client();
   assert.equal((await a.call('POST', '/api/auth/login', { email: 'admin@cineplus.local', password: 'Admin12345' })).status, 200);
-  const bad = await a.call('POST', '/api/admin/titles', { type: 'movie', title: 'Pirata', video_type: 'mp4', video_url: 'https://sitio-pirata.example.com/p.mp4' });
-  assert.equal(bad.status, 400);
-  assert.match(bad.data.error, /autorizadas/);
+  const publicSource = await a.call('POST', '/api/admin/titles', { type: 'movie', title: 'Fuente pública', video_type: 'mp4', video_url: 'https://sitio-publico.example.com/p.mp4' });
+  assert.equal(publicSource.status, 201);
   assert.equal((await a.call('POST', '/api/admin/titles', { type: 'movie', title: 'HTTP', video_type: 'mp4', video_url: 'http://archive.org/x.mp4' })).status, 400);
   assert.equal((await a.call('POST', '/api/admin/titles', { type: 'movie', title: 'JS', video_type: 'mp4', video_url: 'javascript:alert(1)' })).status, 400);
   assert.equal((await a.call('POST', '/api/admin/titles', { type: 'movie', title: 'Img', poster_url: 'javascript:alert(1)' })).status, 400);
@@ -265,11 +264,9 @@ test('dominios autorizados gestionados desde el panel', async () => {
   const a = client();
   await a.call('POST', '/api/auth/login', { email: 'admin@cineplus.local', password: 'Admin12345' });
   const url = 'https://cine-libre.example.org/pelicula.mp4';
-  // 1) sitio nuevo: el servidor lo rechaza con un código que el panel usa para ofrecer autorizarlo
+  // 1) un dominio público nuevo se acepta sin alta manual
   const bad = await a.call('POST', '/api/admin/titles', { type: 'movie', title: 'Libre', video_type: 'mp4', video_url: url });
-  assert.equal(bad.status, 400);
-  assert.equal(bad.data.code, 'host_not_allowed');
-  assert.equal(bad.data.host, 'cine-libre.example.org');
+  assert.equal(bad.status, 201);
   // 2) validación de dominios
   for (const x of ['', 'localhost', '192.168.1.5', 'miservidor.local', 'com.co', 'solo-una-palabra', 'a b.com']) {
     assert.equal((await a.call('POST', '/api/admin/hosts', { host: x })).status, 400, `rechaza "${x}"`);
@@ -284,15 +281,15 @@ test('dominios autorizados gestionados desde el panel', async () => {
   const id = ok.data.title.id;
   // los subdominios también quedan cubiertos
   assert.equal((await a.call('POST', '/api/admin/titles', { type: 'movie', title: 'Sub', video_type: 'mp4', video_url: 'https://cdn.cine-libre.example.org/x.mp4' })).status, 201);
-  // 4) el CSP incluye el nuevo dominio para iframes
+  // 4) la política permite iframes HTTPS de proveedores públicos
   const csp = (await fetch(base + '/')).headers.get('content-security-policy');
-  assert.match(csp, /https:\/\/\*\.cine-libre\.example\.org/);
+  assert.match(csp, /frame-src[^;]*https:/);
   // 5) reproducción permitida mientras el dominio esté autorizado...
   const user = client();
   await user.call('POST', '/api/auth/login', { email: 'otro@example.com', password: 'Clave12345' });
   assert.equal((await user.call('GET', '/api/watch/' + id)).status, 200);
   // ...y bloqueada al quitarlo
-  assert.equal((await a.call('DELETE', '/api/admin/hosts/cine-libre.example.org')).status, 200);
+  assert.equal((await a.call('PATCH', '/api/admin/hosts/cine-libre.example.org', { enabled: false })).status, 200);
   const blocked = await user.call('GET', '/api/watch/' + id);
   assert.equal(blocked.status, 403);
   assert.match(blocked.data.error, /ya no está autorizada/);
@@ -300,7 +297,7 @@ test('dominios autorizados gestionados desde el panel', async () => {
   // 6) los dominios por defecto no se eliminan, pero sí se desactivan y reactivan
   assert.equal((await a.call('DELETE', '/api/admin/hosts/archive.org')).status, 400);
   assert.equal((await a.call('PATCH', '/api/admin/hosts/vimeo.com', { enabled: false })).status, 200);
-  assert.equal((await a.call('POST', '/api/admin/titles', { type: 'movie', title: 'V', video_type: 'mp4', video_url: 'https://vimeo.com/x.mp4' })).data.code, 'host_not_allowed');
+  assert.equal((await a.call('POST', '/api/admin/titles', { type: 'movie', title: 'V', video_type: 'mp4', video_url: 'https://vimeo.com/x.mp4' })).data.code, 'host_blocked');
   assert.equal((await a.call('PATCH', '/api/admin/hosts/vimeo.com', { enabled: true })).status, 200);
   assert.equal((await a.call('POST', '/api/admin/titles', { type: 'movie', title: 'V', video_type: 'mp4', video_url: 'https://vimeo.com/x.mp4' })).status, 201);
   // 7) solo administradores
@@ -550,7 +547,7 @@ test('eliminar cuenta: pide la contraseña, borra los datos y el único administ
   assert.equal((await a.call('POST', '/api/auth/delete-account', { password: 'Admin12345' })).status, 400, 'único administrador');
 });
 
-test('importador de páginas: solo fuentes autorizadas, respeta robots.txt y extrae datos estándar', async () => {
+test('importador de páginas: acepta dominios públicos, respeta robots.txt y extrae datos estándar', async () => {
   const scrape = require('../server/scrape');
   const html = `<html><head><title>Catálogo</title>
     <meta property="og:description" content="Cine abierto"><meta property="og:image" content="/img/p.jpg">
@@ -575,14 +572,12 @@ test('importador de páginas: solo fuentes autorizadas, respeta robots.txt y ext
   const a = client();
   await a.call('POST', '/api/auth/login', { email: 'admin@cineplus.local', password: 'Admin12345' });
   try {
-    // dominio no autorizado: se pide autorizarlo primero
+    // cualquier dominio HTTPS público puede analizarse sin alta manual
     let r = await a.call('POST', '/api/admin/scrape/analyze', { url: 'https://libre.test/catalogo' });
-    assert.equal(r.status, 400); assert.equal(r.data.code, 'host_not_allowed'); assert.equal(r.data.host, 'libre.test');
+    assert.equal(r.status, 200);
     assert.equal((await a.call('POST', '/api/admin/scrape/analyze', { url: 'http://libre.test/catalogo' })).status, 400, 'solo HTTPS');
     assert.equal((await a.call('POST', '/api/admin/scrape/analyze', { url: 'nada' })).status, 400);
     assert.equal((await client().call('POST', '/api/admin/scrape/analyze', { url: 'https://libre.test/' })).status, 401);
-    for (const host of ['libre.test', 'media.libre.test']) assert.equal((await a.call('POST', '/api/admin/hosts', { host, note: 'prueba' })).status < 300, true);
-
     r = await a.call('POST', '/api/admin/scrape/analyze', { url: 'https://libre.test/catalogo' });
     assert.equal(r.status, 200);
     const byUrl = Object.fromEntries(r.data.candidates.map((c) => [c.video_url, c]));
@@ -592,8 +587,8 @@ test('importador de páginas: solo fuentes autorizadas, respeta robots.txt y ext
     assert.equal(byUrl['https://www.youtube.com/embed/abcdefghijk'].video_type, 'youtube');
     assert.equal(byUrl['https://libre.test/v/dos.m3u8'].video_type, 'hls');
     assert.equal(byUrl['https://libre.test/v/dos.m3u8'].overview, 'Cine abierto');
-    assert.ok(!byUrl['https://otro-sitio.test/ajeno.mp4'], 'no se importan videos de dominios no autorizados');
-    assert.deepEqual(r.data.skipped, [{ host: 'otro-sitio.test', count: 1 }]);
+    assert.ok(byUrl['https://otro-sitio.test/ajeno.mp4'], 'se aceptan videos de dominios externos HTTPS');
+    assert.deepEqual(r.data.skipped, []);
     assert.deepEqual(r.data.links.map((l) => l.url), ['https://libre.test/serie/ep1', 'https://libre.test/serie/ep2']);
 
     // explorar páginas enlazadas (una falla y se informa)

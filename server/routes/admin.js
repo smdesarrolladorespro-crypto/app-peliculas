@@ -244,12 +244,11 @@ module.exports = (app) => {
     res.json({ hosts: hostList() }, 201);
   });
 
-  // Activar/desactivar un dominio por defecto o del .env
+  // Bloquear o desbloquear cualquier dominio desde el panel
   app.patch('/api/admin/hosts/:host', ...guard, (req, res) => {
     const host = normalizeHost(req.params.host);
     const e = hostList().find((x) => x.host === host);
     if (!e) throw new HttpError(404, 'Dominio no encontrado');
-    if (e.origin === 'custom') throw new HttpError(400, 'Los dominios que agregaste se eliminan, no se desactivan');
     if (req.body.enabled) q.run("DELETE FROM source_hosts WHERE host = ? AND mode = 'block'", host);
     else q.run("INSERT OR REPLACE INTO source_hosts (host, mode, note, created_at) VALUES (?, 'block', '', ?)", host, Date.now());
     invalidate();

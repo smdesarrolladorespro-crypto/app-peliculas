@@ -98,8 +98,8 @@ function sourceFields(src, stats) {
   const type = h('select', null, stats.videoTypes.map((t) => h('option', { value: t, selected: t === (src.video_type || 'mp4') }, TYPE_LABEL[t] || t)));
   const url = h('input', { type: 'text', value: src.video_url || '', placeholder: 'https://…', maxlength: '2000' });
   return { type, url, el: h('div', null,
-    h('div', { class: 'form-grid' }, fld('Tipo de fuente', type), fld('URL de la fuente autorizada', url)),
-    h('div', { class: 'hint', style: 'margin:-6px 0 14px;font-size:12px;color:var(--muted)' }, 'Pega el enlace del video. Si su sitio aún no está autorizado, al guardar te preguntaremos si quieres autorizarlo. Autorizados ahora: ' + stats.allowedHosts.join(', ') + '.')) };
+    h('div', { class: 'form-grid' }, fld('Tipo de fuente', type), fld('URL de la fuente HTTPS', url)),
+    h('div', { class: 'hint', style: 'margin:-6px 0 14px;font-size:12px;color:var(--muted)' }, 'Pega el enlace HTTPS del video. Se aceptan dominios públicos; los bloqueos explícitos se administran en Fuentes.')) };
 }
 
 /* -------------------------------------------------------------- Episodios */
@@ -254,7 +254,7 @@ function pageImportModal(onDone) {
     function show(info) {
       clear(out);
       if (info.skipped && info.skipped.length) {
-        out.append(h('p', { class: 'muted', style: 'font-size:13px' }, 'No se importan (dominio no autorizado): ' + info.skipped.map((x) => `${x.host} (${x.count})`).join(', ') + '. Autorízalos en Fuentes solo si tienes permiso para usar ese contenido.'));
+        out.append(h('p', { class: 'muted', style: 'font-size:13px' }, 'No se importan (dominio bloqueado o URL no válida): ' + info.skipped.map((x) => `${x.host} (${x.count})`).join(', ') + '. Autorízalos en Fuentes solo si tienes permiso para usar ese contenido.'));
       }
       if (info.errors && info.errors.length) out.append(h('p', { class: 'muted', style: 'font-size:13px' }, `${info.errors.length} página(s) no se pudieron leer: ` + info.errors.map((e) => e.message).join(' · ')));
       if (!items.length) {
@@ -332,7 +332,7 @@ function pageImportModal(onDone) {
     }
 
     box.append(h('h3', null, 'Importar desde una página o feed'),
-      h('p', { class: 'muted', style: 'font-size:13px;margin-bottom:12px' }, 'Pega la dirección de una página, un feed RSS o un sitemap de video de una fuente autorizada. Se leen solo los datos que el sitio publica en formatos estándar, respetando su robots.txt. Usa únicamente contenido libre o con permiso del titular: tú eres responsable de lo que publiques.'),
+      h('p', { class: 'muted', style: 'font-size:13px;margin-bottom:12px' }, 'Pega la dirección HTTPS de una página pública, un feed RSS o un sitemap de video. Se leen solo los datos que el sitio publica en formatos estándar, respetando su robots.txt. Usa únicamente contenido libre o con permiso del titular: tú eres responsable de lo que publiques.'),
       h('form', { class: 'row-flex', style: 'flex-wrap:nowrap;margin-bottom:12px', onsubmit: async (e) => {
         e.preventDefault(); go.disabled = true; clear(out); out.append(spinner()); picked.clear();
         try {
@@ -596,8 +596,8 @@ async function systemPanel() {
 function overviewTab(pane, stats) {
   systemPanel().then((el) => pane.append(el));
   pane.append(h('div', { class: 'stats' }, [['Usuarios', stats.users], ['Películas', stats.movies], ['Series', stats.series], ['Anime', stats.anime], ['Episodios', stats.episodes], ['Destacados', stats.featured], ['Reproducciones', stats.plays]].map(([l, v]) => h('div', { class: 'stat' }, h('b', null, v), h('span', null, l)))),
-    h('div', { class: 'panel' }, h('h3', null, 'Fuentes de video autorizadas'),
-      h('p', { class: 'muted', style: 'margin-bottom:10px' }, 'El servidor rechaza cualquier fuente que no sea HTTPS de uno de estos dominios (o un archivo subido). Gestiona la lista en la pestaña Fuentes.'),
+    h('div', { class: 'panel' }, h('h3', null, 'Fuentes de video'),
+      h('p', { class: 'muted', style: 'margin-bottom:10px' }, 'Se aceptan fuentes HTTPS de dominios públicos. La lista de Fuentes sirve para bloquear dominios específicos.'),
       h('div', { class: 'chips' }, stats.allowedHosts.map((x) => h('span', { class: 'chip' }, x)))),
     h('div', { class: 'panel' }, h('h3', null, 'TMDB'),
       h('p', null, stats.tmdb ? '✔ Conectado: puedes autocompletar sinopsis, pósteres y calificaciones al crear o editar títulos.' : 'No configurado. Define TMDB_API_KEY en .env para autocompletar datos. TMDB solo aporta metadatos; no otorga derechos de reproducción.')));
