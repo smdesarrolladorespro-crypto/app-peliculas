@@ -2,7 +2,7 @@
       "relation": ["delegate_permission/common.handle_all_urls"],
       "target": {
         "namespace": "android_app",
-        "package_name": "com.sm.desarrolladores.pro.cineplus",
-        "sha256_cert_fingerprints": ["42:1E:BC:44:D2:78:41:73:F9:CE:43:7E:1E:DC:6A:CC:01:7D:BF:AD:6D:51:3F:63:B4:88:FD:25:09:77:F7:4C"]
+        "package_name": "com.pro.flixor",
+        "sha256_cert_fingerprints": ["8C:CE:CA:3A:52:7C:48:5B:83:26:76:89:6A:E4:5F:80:87:7E:B9:89:1B:86:54:21:C5:BB:91:47:EE:34:97:1C"]
       }
     }]
